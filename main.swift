@@ -16,6 +16,13 @@ func replace(_ text: String, _ pattern: String, _ transform: (String) -> String)
     return result
 }
 final class Cleaner {
+    private var expressions: [String:NSRegularExpression] = [:]
+    private func expression(_ pattern: String) -> NSRegularExpression {
+        if let cached = expressions[pattern] { return cached }
+        let regex = try! NSRegularExpression(pattern:pattern)
+        expressions[pattern] = regex
+        return regex
+    }
     var counts = [0, 0, 0, 0]
     var category = 0
     func tracked(_ text: String, _ pattern: String, _ transform: (String) -> String) -> String {
@@ -27,7 +34,7 @@ final class Cleaner {
     }
     // Patterns capture only the sensitive value; surrounding syntax stays byte-for-byte intact.
     func redactValues(_ text: String, _ pattern: String) -> String {
-        let regex = try! NSRegularExpression(pattern: pattern)
+        let regex = expression( pattern)
         var result = text
         for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).reversed() {
             guard let range = Range(match.range(withName: "value"), in: result) else { continue }
@@ -40,7 +47,7 @@ final class Cleaner {
     }
     func redactCredentialLine(_ line: String, keyChainID: Bool = false) -> String {
         let pattern = line.range(of:#"(?i)^\h*username\h+"#,options:.regularExpression) != nil ? #"(?i)^(\h*username\h+)(\S+)"# : hostnameValuePattern
-        let regex = try! NSRegularExpression(pattern:pattern)
+        let regex = expression(pattern)
         guard let match = regex.firstMatch(in:line,range:NSRange(line.startIndex...,in:line)), let range = Range(match.range(at:2),in:line) else {
             return redactCredentialCommand(line,keyChainID:keyChainID)
         }
@@ -79,7 +86,7 @@ final class Cleaner {
             #"(?i)^\h*key\h+config-key\h+password-encrypt\h+"# + value
         ]
         for pattern in specialPatterns {
-            let regex = try! NSRegularExpression(pattern:pattern)
+            let regex = expression(pattern)
             if regex.firstMatch(in:line,range:NSRange(line.startIndex...,in:line)) != nil {
                 return redactValues(line,pattern)
             }
@@ -133,7 +140,7 @@ final class Cleaner {
             if options.location { commands += [#"snmp-server\h+(?:name|sysname)"#] }
             var cleaned = line
             if !commands.isEmpty {
-                let regex = try! NSRegularExpression(pattern: #"(?i)^(\h*(?:"# + commands.joined(separator:"|") + #")\h+)([^\r\n]+)"#)
+                let regex = expression( #"(?i)^(\h*(?:"# + commands.joined(separator:"|") + #")\h+)([^\r\n]+)"#)
                 if let match = regex.firstMatch(in:line,range:NSRange(line.startIndex...,in:line)), let r = Range(match.range(at:2),in:line) {
                     if line[r] != "[REDACTED]" { counts[3] += 1; cleaned.replaceSubrange(r,with:"[REDACTED]") }
                 }
@@ -144,7 +151,7 @@ final class Cleaner {
         if options.serials {
             // Find values only in explicit serial/UDI fields, then redact repeats of those values.
             let pattern = #"(?im)(?:\b(?:processor board id|(?:system |chassis |device )?serial(?:[- ]number| no\.?)|license\h+udi\h+pid\h+\S+\h+sn)\h*[:=]?\h+|\bSN\h*:\h*)(?<serial>[A-Za-z0-9][A-Za-z0-9._/-]*)"#
-            let regex = try! NSRegularExpression(pattern:pattern)
+            let regex = expression(pattern)
             let ns = result as NSString
             let serials = Set(regex.matches(in:result,range:NSRange(location:0,length:ns.length)).map { ns.substring(with:$0.range(withName:"serial")) })
             for match in regex.matches(in:result,range:NSRange(result.startIndex...,in:result)).reversed() {
@@ -169,7 +176,7 @@ final class Cleaner {
         if ips[value] == nil { ips[value] = "IP_\(ips.count + 1)" }; return ips[value]!
     }
     func discoverHosts(_ input: String) {
-        let regex = try! NSRegularExpression(pattern: #"(?im)^\x{FEFF}?\h*(?:hostname|switchname)\h+(\S+)"#)
+        let regex = expression( #"(?im)^\x{FEFF}?\h*(?:hostname|switchname)\h+(\S+)"#)
         for match in regex.matches(in:input,range:NSRange(input.startIndex...,in:input)) {
             if let range = Range(match.range(at:1),in:input) { _ = alias(String(input[range]),host:true) }
         }
@@ -208,7 +215,7 @@ final class Cleaner {
         if hostname {
             discoverHosts(input)
             // Replace only known hostname value positions; never command keywords or generated aliases.
-            let regex = try! NSRegularExpression(pattern:hostnameValuePattern)
+            let regex = expression(hostnameValuePattern)
             for match in regex.matches(in:text,range:NSRange(text.startIndex...,in:text)).reversed() {
                 guard let range = Range(match.range(at:2),in:text), let replacement = hosts[String(text[range]).lowercased()] else { continue }
                 if text[range] != replacement { text.replaceSubrange(range,with:replacement); counts[0] += 1 }

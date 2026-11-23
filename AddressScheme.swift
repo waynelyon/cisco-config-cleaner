@@ -14,6 +14,7 @@ final class AddressScheme {
         var wildcard = false
     }
     static let pattern = #"(?i)(?<![\w.:])(?:(?:[0-9a-f]{0,4}:){2,}(?:[0-9]{1,3}\.){3}[0-9]{1,3}|(?:[0-9]{1,3}\.){3}[0-9]{1,3}|(?:[0-9a-f]{0,4}:){2,}[0-9a-f:]{0,4})(?![\w.:])"#
+    private static let tokenRegex = try! NSRegularExpression(pattern:pattern)
     var key4: UInt32 = 0
     var key6 = [UInt8](repeating:0,count:16)
     var has4 = false, has6 = false
@@ -43,7 +44,7 @@ final class AddressScheme {
         return b[0] == 255 || (b[0] == 254 && b[1] & 0xc0 == 0x80) || b.dropLast().allSatisfy { $0 == 0 } && b.last! <= 1
     }
     static func tokens(_ line: String) -> [Token] {
-        let regex = try! NSRegularExpression(pattern:pattern)
+        let regex = tokenRegex
         let ns = line as NSString
         var result: [Token] = regex.matches(in:line,range:NSRange(location:0,length:ns.length)).compactMap { match in
             let value = ns.substring(with:match.range)
