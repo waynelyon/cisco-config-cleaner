@@ -209,10 +209,16 @@ final class Cleaner {
             text = result.0
             counts[1] = result.1
         } else if addresses {
-            text = tracked(text, "(?<![\\w.])(?:[0-9]{1,3}\\.){3}[0-9]{1,3}(?![\\w.])") { value in
-                value.split(separator: ".").allSatisfy { (Int($0) ?? 256) < 256 } ? (marked ? "*" : "") + self.alias(value, host: false) : value
-            }
-            text = tracked(text, "(?i)(?<![\\w:])(?:[0-9a-f]{0,4}:){2,}[0-9a-f:]{0,4}(?:%[a-z0-9_.-]+)?(?![\\w:])") { (marked ? "*" : "") + self.alias($0.lowercased(), host: false) }
+            text = text.components(separatedBy:"\n").map { line in
+                var result = line
+                for token in AddressScheme.tokens(line).reversed() {
+                    if let range = Range(token.range,in:result) {
+                        result.replaceSubrange(range,with:(marked ? "*" : "") + alias(AddressScheme.string(token.bytes),host:false))
+                        counts[1] += 1
+                    }
+                }
+                return result
+            }.joined(separator:"\n")
         }
         return crOnly ? text.replacingOccurrences(of:"\n",with:"\r") : text
     }

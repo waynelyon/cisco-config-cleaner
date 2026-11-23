@@ -1,6 +1,11 @@
 import Foundation
 
 func runSchemeTests() {
+    let labels = Cleaner()
+    let labelOutput = labels.clean("time 12:34:56\nneighbor ::ffff:192.0.2.1\nneighbor 0:0:0:0:0:ffff:c000:201",hostname:false,addresses:true,secrets:false,marked:true)
+    let labelLines = labelOutput.components(separatedBy:"\n")
+    assert(labelLines[0] == "time 12:34:56" && labelLines[1] == labelLines[2])
+    assert(labelLines[1].hasPrefix("neighbor *IP_") && labels.counts[1] == 2)
     let highWildcard = AddressScheme(["access-list 101 permit ip 10.1.2.3 255.0.0.0 any"])
     assert(highWildcard.key4 != 0 && highWildcard.key4 & 0xff000000 == 0)
     let explicitWildcard = AddressScheme(["network 10.1.2.3 wildcard-mask 255.0.0.0"])
