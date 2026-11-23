@@ -1,0 +1,19 @@
+name: macOS checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build and test native app
+        run: zsh build.sh
+      - name: Build and verify universal release
+        run: zsh release.sh
+      - name: Verify release checksum
+        run: cd releases && shasum -a 256 -c SHA256SUMS.txt
