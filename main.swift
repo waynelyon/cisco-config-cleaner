@@ -47,6 +47,14 @@ final class Cleaner {
         let token = #"(?:"(?:\\[^\r\n]|[^"\\\r\n])*(?:"|\\?(?=\r?$))|'(?:\\[^\r\n]|[^'\\\r\n])*(?:'|\\?(?=\r?$))|[^ \t\r\n]+)"#
         let value = "(?<value>" + token + ")"
         var result = line
+        if trimmed.range(of: #"(?i)^snmp-server\h+community\h+"#, options:.regularExpression) != nil {
+            return redactValues(line, #"(?i)^\h*snmp-server\h+community\h+(?:(?:0|6|7)\h+)?"# + value)
+        }
+        if trimmed.range(of: #"(?i)^snmp-server\h+host\h+"#, options:.regularExpression) != nil {
+            let prefix = #"(?i)^\h*snmp-server\h+host\h+(?:vrf\h+\S+\h+)?\S+\h+(?:vrf\h+\S+\h+)?(?:(?:traps|informs)\h+)?"#
+            if line.range(of:prefix + #"version\h+3\b"#,options:.regularExpression) != nil { return line }
+            return redactValues(line, prefix + #"(?:version\h+(?:1|2c)\h+)?"# + value)
+        }
         // Commands with extra fields before the value must be handled before generic keywords.
         let specialPatterns = [
             #"(?i)\b(?:ntp\h+)?authentication-key\h+\d+\h+(?:md5|sha1|sha2|cmac-aes-128|hmac-sha1|hmac-sha2-256)\h+(?:(?:clear|encrypted|plain|hash)\h+)?"# + value,
@@ -84,13 +92,6 @@ final class Cleaner {
             // Only numeric keys in a known key-chain block are identifiers.
             if keyChainID, pattern.hasPrefix(#"(?i)^\h*key"#), trimmed.range(of: #"(?i)^key\h+\d+$"#, options:.regularExpression) != nil { continue }
             result = redactValues(result, pattern)
-        }
-        if trimmed.range(of: #"(?i)^snmp-server\h+host\h+"#, options:.regularExpression) != nil {
-            // v1 is implicit without a version clause; v3 uses a username, not a community.
-            let hostPrefix = #"(?i)^\h*snmp-server\h+host\h+(?:vrf\h+\S+\h+)?\S+\h+(?:vrf\h+\S+\h+)?(?:(?:traps|informs)\h+)?"#
-            if trimmed.range(of: #"(?i)\bversion\h+3\b"#, options:.regularExpression) == nil {
-                result = redactValues(result, hostPrefix + #"(?:version\h+(?:1|2c)\h+)?"# + value)
-            }
         }
         return result
     }

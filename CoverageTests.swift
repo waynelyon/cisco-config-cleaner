@@ -7,6 +7,9 @@ func expectSecret(_ source: String, _ expected: String) {
 }
 
 func runCoverageTests() {
+    expectSecret("snmp-server community password RO", "snmp-server community [REDACTED] RO")
+    expectSecret("snmp-server host 192.0.2.1 password udp-port 162", "snmp-server host 192.0.2.1 [REDACTED] udp-port 162")
+    expectSecret("snmp-server host 192.0.2.1 version 3 priv password", "snmp-server host 192.0.2.1 version 3 priv password")
     expectSecret("! comment\rpassword 0 DEMO_SECRET\r", "! comment\rpassword 0 [REDACTED]\r")
     expectSecret("! comment\rpassword 0 DEMO_SECRET\nend", "! comment\npassword 0 [REDACTED]\nend")
     expectSecret("-----BEGIN PRIVATE KEY-----\nDEMO_PRIVATE\nMORE", "-----BEGIN PRIVATE KEY-----\n[REDACTED]")
