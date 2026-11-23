@@ -2,6 +2,16 @@
 
 Native macOS utility for reviewing and anonymizing batches of Cisco configuration files. Processing stays on your Mac.
 
+## Screenshots
+
+The screenshots use the synthetic configurations in `fixtures/`; no production configuration is shown.
+
+![Batch review with original and cleaned configurations](docs/screenshots/batch-review.png)
+
+![Cleaning options and empty file queue](docs/screenshots/cleaning-options.png)
+
+See [the ranked repository audit and fixes](AUDIT.md) for the November 23, 2026 review. Screenshots show source version 27.0.1; the release download may be an earlier build.
+
 ## Download and install
 
 Download the app ZIP from the [latest GitHub release](https://github.com/waynelyon/cisco-config-cleaner/releases/latest), unzip it, and drag **Cisco Config Cleaner.app** into **Applications**.
