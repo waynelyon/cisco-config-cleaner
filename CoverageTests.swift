@@ -7,6 +7,11 @@ func expectSecret(_ source: String, _ expected: String) {
 }
 
 func runCoverageTests() {
+    let bom = "\u{FEFF}hostname edge\rpassword 0 DEMO"
+    assert(Cleaner().clean(bom,hostname:true,addresses:false,secrets:true) == "hostname DEVICE_1\rpassword 0 [REDACTED]")
+    assert(Cleaner().clean(bom,hostname:false,addresses:false,secrets:false) == bom)
+    let mixedUnchanged = "! comment\rpassword 0 DEMO\nend"
+    assert(Cleaner().clean(mixedUnchanged,hostname:false,addresses:false,secrets:false) == mixedUnchanged)
     let copiedLines = ["hostname DEVICE_1", " description café"]
     assert(ConfigurationTextView.copiedText(copiedLines,selection:NSRange(location:0,length:1000)) == copiedLines.joined(separator:"\n") + "\n")
     assert(ConfigurationTextView.copiedText(copiedLines,selection:NSRange(location:0,length:4)).isEmpty)

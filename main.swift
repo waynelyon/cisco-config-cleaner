@@ -158,7 +158,7 @@ final class Cleaner {
         if ips[value] == nil { ips[value] = "IP_\(ips.count + 1)" }; return ips[value]!
     }
     func discoverHosts(_ input: String) {
-        let regex = try! NSRegularExpression(pattern: #"(?im)^\h*(?:hostname|switchname)\h+(\S+)"#)
+        let regex = try! NSRegularExpression(pattern: #"(?im)^\x{FEFF}?\h*(?:hostname|switchname)\h+(\S+)"#)
         for match in regex.matches(in:input,range:NSRange(input.startIndex...,in:input)) {
             if let range = Range(match.range(at:1),in:input) { _ = alias(String(input[range]),host:true) }
         }
@@ -167,10 +167,11 @@ final class Cleaner {
     func clean(_ input: String, hostname: Bool, addresses: Bool, secrets: Bool, scheme: AddressScheme? = nil, marked: Bool = false, identity: Bool = false, identityOptions: IdentityOptions? = nil) -> String {
         counts = [0, 0, 0, 0]
         category = 0
-        let crOnly = input.contains("\r") && !input.contains("\n")
-        var text = replace(input, #"\r(?!\n)"#) { _ in "\n" }
-        // Remove banners before parsing commands so their arbitrary payload cannot alter parsing.
         let metadataOptions = identityOptions ?? (identity ? IdentityOptions() : .none)
+        guard hostname || addresses || secrets || metadataOptions != .none else { return input }
+        let crOnly = input.contains("\r") && !input.contains("\n")
+        var text = replace(input.hasPrefix("\u{FEFF}") ? String(input.dropFirst()) : input, #"\r(?!\n)"#) { _ in "\n" }
+        // Remove banners before parsing commands so their arbitrary payload cannot alter parsing.
         if metadataOptions.banners {
             var bannersOnly = IdentityOptions.none; bannersOnly.banners = true
             text = stripIdentity(text, options:bannersOnly)
