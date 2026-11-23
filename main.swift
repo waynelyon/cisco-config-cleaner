@@ -413,13 +413,33 @@ struct DiffInfo {
         }
     }
 }
+final class ConfigurationTextView: NSTextView {
+    var configurationLines: [String] = []
+    static func copiedText(_ lines: [String], selection: NSRange) -> String {
+        var offset = 0, output = ""
+        for (index,line) in lines.enumerated() {
+            let prefixLength = String(format:"%4d    ",index + 1).utf16.count
+            let body = (line + "\n") as NSString
+            let bodyRange = NSRange(location:offset + prefixLength,length:body.length)
+            let overlap = NSIntersectionRange(selection,bodyRange)
+            if overlap.length > 0 { output += body.substring(with:NSRange(location:overlap.location - bodyRange.location,length:overlap.length)) }
+            offset += prefixLength + body.length
+        }
+        return output
+    }
+    override func copy(_ sender: Any?) {
+        let copied = Self.copiedText(configurationLines,selection:selectedRange())
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(copied,forType:.string)
+    }
+}
 struct CodePane: NSViewRepresentable {
     let lines: [String]
     let changed: Set<Int>
     let isOriginal: Bool
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true; scroll.autohidesScrollers = true
-        let text = NSTextView(); text.isEditable = false; text.isRichText = false
+        let text = ConfigurationTextView(); text.isEditable = false; text.isRichText = false
         text.isHorizontallyResizable = true; text.isVerticallyResizable = true
         text.minSize = NSSize(width:0,height:0); text.maxSize = NSSize(width:CGFloat.greatestFiniteMagnitude,height:CGFloat.greatestFiniteMagnitude)
         text.textContainer?.containerSize = NSSize(width:CGFloat.greatestFiniteMagnitude,height:CGFloat.greatestFiniteMagnitude)
@@ -430,7 +450,8 @@ struct CodePane: NSViewRepresentable {
         return scroll
     }
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        guard let text = scroll.documentView as? NSTextView else { return }
+        guard let text = scroll.documentView as? ConfigurationTextView else { return }
+        text.configurationLines = lines
         let rendered = NSMutableAttributedString()
         for (index,line) in lines.enumerated() {
             let marker = changed.contains(index) ? (isOriginal ? "−" : "+") : " "

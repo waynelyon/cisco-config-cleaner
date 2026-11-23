@@ -7,6 +7,10 @@ func expectSecret(_ source: String, _ expected: String) {
 }
 
 func runCoverageTests() {
+    let copiedLines = ["hostname DEVICE_1", " description café"]
+    assert(ConfigurationTextView.copiedText(copiedLines,selection:NSRange(location:0,length:1000)) == copiedLines.joined(separator:"\n") + "\n")
+    assert(ConfigurationTextView.copiedText(copiedLines,selection:NSRange(location:0,length:4)).isEmpty)
+    assert(ConfigurationTextView.copiedText(copiedLines,selection:NSRange(location:8,length:8)) == "hostname")
     var serialOptions = IdentityOptions.none; serialOptions.serials = true
     let serialOutput = Cleaner().clean("serial-number password\npassword encryption aes\n! device password",hostname:false,addresses:false,secrets:true,identityOptions:serialOptions)
     assert(serialOutput == "serial-number [REDACTED]\npassword encryption aes\n! device [REDACTED]")
