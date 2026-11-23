@@ -7,6 +7,9 @@ func expectSecret(_ source: String, _ expected: String) {
 }
 
 func runCoverageTests() {
+    expectSecret("password strengthSecret", "password [REDACTED]")
+    expectSecret("password policySecret", "password [REDACTED]")
+    expectSecret("password strength", "password [REDACTED]")
     expectSecret("username password secret 9 DEMO_HASH", "username password secret 9 [REDACTED]")
     expectSecret("username secret password 0 DEMO_SECRET", "username secret password 0 [REDACTED]")
     let cases: [(String,String)] = [

@@ -43,7 +43,7 @@ final class Cleaner {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasPrefix("!") || trimmed.hasPrefix("#") || trimmed.lowercased().hasPrefix("description ") || trimmed.lowercased().hasPrefix("no ") { return line }
         if trimmed.range(of: #"(?i)^password\h+encryption\h+aes\h*$"#, options:.regularExpression) != nil { return line }
-        if trimmed.range(of: #"(?i)^(?:password (?:strength|policy|minimum-length|min-length)|key chain |authentication (?:key-chain|mode) )"#, options:.regularExpression) != nil { return line }
+        if trimmed.range(of: #"(?i)^(?:password\h+(?:strength|policy|minimum-length|min-length)\h+|key chain |authentication (?:key-chain|mode) )"#, options:.regularExpression) != nil { return line }
         let token = #"(?:"[^"\r\n]*"|'[^'\r\n]*'|[^ \t\r\n]+)"#
         let value = "(?<value>" + token + ")"
         var result = line
