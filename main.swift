@@ -269,10 +269,14 @@ final class Model: ObservableObject {
     @Published var identityOptions = IdentityOptions() { didSet { saveOptions() } }
     @Published var status = "Files stay on this Mac"
     private let defaults: UserDefaults?
+    private let maximumBatchBytes: Int
+    private let maximumFiles: Int
     private var restoringOptions = true
     // Tests use an isolated store (or no store); only the app uses standard preferences.
-    init(defaults: UserDefaults? = nil) {
+    init(defaults: UserDefaults? = nil, maximumBatchBytes: Int = 100_000_000, maximumFiles: Int = 500) {
         self.defaults = defaults
+        self.maximumBatchBytes = maximumBatchBytes
+        self.maximumFiles = maximumFiles
         func option(_ key: String) -> Bool { defaults?.object(forKey:"cleaning." + key) as? Bool ?? true }
         host = option("hostnames")
         ip = option("addresses")
@@ -328,15 +332,24 @@ final class Model: ObservableObject {
         return text
     }
     func add(_ urls: [URL]) {
+        var queuedBytes = ready.reduce(0) { $0 + $1.original.utf8.count }
+        var queueFull = false
         for url in urls where url.isFileURL && !files.contains(where: { $0.url == url }) {
+            guard files.count < maximumFiles else { queueFull = true; break }
             var file = ConfigFile(url:url,outputName:cleanName(url))
             do {
-                file.original = try Self.readConfiguration(url)
+                let text = try Self.readConfiguration(url)
+                if text.utf8.count > maximumBatchBytes - queuedBytes {
+                    file.error = "Batch size limit reached. Remove files before adding this configuration."
+                } else {
+                    file.original = text; queuedBytes += text.utf8.count
+                }
             } catch { file.error = "Could not read this file. Select a text configuration under 20 MB." }
             files.append(file)
         }
         if selected == nil { selected = files.first?.id }
         refresh()
+        if queueFull { status += " • Queue limit reached; remaining files were not added" }
     }
     func refresh() {
         let cleaner = Cleaner()
