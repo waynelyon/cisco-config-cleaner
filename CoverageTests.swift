@@ -14,6 +14,26 @@ func runCoverageTests() {
     assert(Model.extraIdentityRedaction("aa:bb:cc:dd:ee:ff AA-BB-CC-DD-EE-FF") == "[MAC_REDACTED] [MAC_REDACTED]")
     assert(Model.extraIdentityRedaction("username alice secret 9 [REDACTED]",usernames:false) == "username alice secret 9 [REDACTED]")
     assert(Model.possibleSecretLines("api_key TEST_TOKEN\npassword [REDACTED]") == 1)
+    assert(Model.secretLineNumbers("username [REDACTED] api_key DEMO_TOKEN\r\npassword [REDACTED]\r\nclient_secret=DEMO") == [1,3])
+    assert(Model.secretLineNumbers("password 7 [REDACTED] secret 9 DEMO") == [1])
+    assert(Model.secretLineNumbers("password [REDACTED]DEMO") == [1])
+    assert(Model.extraIdentityRedaction("User-Name = alice",macs:false,circuits:false) == "User-Name = [REDACTED]")
+    let identities = Model.extraIdentityResult("snmp-server user alice GROUP v3 auth sha [REDACTED]\nppp pap sent-username bob password [REDACTED]\nsnmp-server host 192.0.2.1 version 3 priv carol\nUser name: dave",usernames:true,macs:false,circuits:false)
+    assert(identities.1 == 4 && !identities.0.contains("alice") && !identities.0.contains("bob") && !identities.0.contains("carol") && !identities.0.contains("dave"))
+    let addresses = "neighbor 10.1.2.3\nneighbor 172.16.1.1\nneighbor 192.168.1.1\nneighbor 198.51.100.1\nneighbor 2001:db8::1"
+    let privateOnly = AddressSelection(privateIPv4:true,otherIPv4:false,ipv6:false)
+    let privateOutput = Cleaner().clean(addresses,hostname:false,addresses:true,secrets:false,marked:true,addressSelection:privateOnly)
+    assert(!privateOutput.contains("10.1.2.3") && !privateOutput.contains("172.16.1.1") && !privateOutput.contains("192.168.1.1") && privateOutput.contains("198.51.100.1") && privateOutput.contains("2001:db8::1"))
+    let otherOnly = AddressSelection(privateIPv4:false,otherIPv4:true,ipv6:true)
+    let otherOutput = Cleaner().clean(addresses,hostname:false,addresses:true,secrets:false,marked:true,addressSelection:otherOnly)
+    assert(otherOutput.contains("10.1.2.3") && !otherOutput.contains("198.51.100.1") && !otherOutput.contains("2001:db8::1"))
+    let prefsName = "CiscoCleanerPrivacyTests." + UUID().uuidString
+    let prefs = UserDefaults(suiteName:prefsName)!
+    defer { prefs.removePersistentDomain(forName:prefsName) }
+    let savedOptions = Model(defaults:prefs); savedOptions.aiSafePreset()
+    savedOptions.addressSelection = privateOnly
+    let restoredOptions = Model(defaults:prefs)
+    assert(restoredOptions.anonymousNames && restoredOptions.removeExtraIdentities && restoredOptions.addressSelection == privateOnly)
     let privacy = Model()
     privacy.files = [ConfigFile(url:URL(fileURLWithPath:"/tmp/customer.cfg"),original:"username alice secret 9 DEMO\nmac address-table static aabb.ccdd.eeff\ncircuit-id CUSTOMER-123",outputName:"")]
     privacy.aiSafePreset()

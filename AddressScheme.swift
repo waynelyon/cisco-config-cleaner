@@ -4,6 +4,18 @@ import Darwin
 // A batch-wide XOR permutation preserves address equality and prefix relationships.
 // Only bits inside EVERY observed network mask may change, preserving host positions.
 // This is structural pseudonymization, not cryptographic anonymization.
+struct AddressSelection: Equatable {
+    var privateIPv4 = true
+    var otherIPv4 = true
+    var ipv6 = true
+    var all: Bool { privateIPv4 && otherIPv4 && ipv6 }
+    func includes(_ bytes: [UInt8]) -> Bool {
+        if bytes.count == 16 { return ipv6 }
+        let isPrivate = bytes[0] == 10 || (bytes[0] == 172 && (16...31).contains(bytes[1])) || (bytes[0] == 192 && bytes[1] == 168)
+        return isPrivate ? privateIPv4 : otherIPv4
+    }
+}
+
 final class AddressScheme {
     struct Token {
         let range: NSRange

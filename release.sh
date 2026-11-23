@@ -17,8 +17,27 @@ build=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' Resources/Info.plist)
 lipo -create "$work/arm64" "$work/x86_64" -output "$app/Contents/MacOS/CiscoConfigCleaner"
 cp Resources/Info.plist "$app/Contents/Info.plist"
 cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
-codesign --force --deep --sign - "$app"
-codesign --verify --deep "$app"
+signing_identity="${SIGNING_IDENTITY:-}"
+notary_profile="${NOTARY_PROFILE:-}"
+if [[ -n "$notary_profile" && -z "$signing_identity" ]]; then
+    print -u2 'NOTARY_PROFILE requires SIGNING_IDENTITY'; exit 1
+fi
+if [[ -n "$signing_identity" ]]; then
+    codesign --force --options runtime --timestamp --sign "$signing_identity" "$app"
+else
+    codesign --force --sign - "$app"
+fi
+codesign --verify --deep --strict "$app"
 archive="releases/Cisco-Config-Cleaner-$version-macOS-universal.zip"
-ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
+if [[ -n "$notary_profile" ]]; then
+    submission="$work/notarization.zip"
+    ditto -c -k --sequesterRsrc --keepParent "$app" "$submission"
+    xcrun notarytool submit "$submission" --keychain-profile "$notary_profile" --wait
+    xcrun stapler staple "$app"
+    xcrun stapler validate "$app"
+    spctl --assess --type execute --verbose "$app"
+fi
+# Stage fresh archive in the temporary directory; avoid retaining stale ZIP entries.
+ditto -c -k --sequesterRsrc --keepParent "$app" "$work/archive.zip"
+mv -f "$work/archive.zip" "$archive"
 (cd releases && shasum -a 256 "${archive:t}" > SHA256SUMS.txt)

@@ -62,7 +62,7 @@ Example: `ip address *10.50.20.1 255.255.255.0`. The leading `*` marks an anonym
 
 Every export includes a legend and review-only header. Markers are an accidental-use deterrent, not a deployment interlock: unmarked configuration lines can still execute if pasted. No text export can prevent intentional edits or guarantee safety on a device.
 
-Logical mode applies a reversible batch-wide bit permutation to IPv4 and IPv6 addresses. It preserves repeated-address relationships, subnet membership, and host bits under recognized masks/prefixes. Common route masks, ACL wildcard masks (including noncontiguous ACL masks), CIDR prefixes, and interface masks are recognized. Without explicit prefixes it preserves /24 IPv4 and /64 IPv6 host portions. IPv6 class bits stay unchanged. Special default, loopback, link-local, multicast and broadcast addresses stay unchanged. This is structural pseudonymization, not cryptographic privacy: it reveals relationships and a known original/mapped pair can reveal the permutation. It does not hide network size or topology.
+Logical mode applies a reversible randomized batch-wide XOR permutation to IPv4 and IPv6 addresses. It preserves repeated-address relationships, subnet membership, and host bits under recognized masks/prefixes. Common route masks, ACL wildcard masks (including noncontiguous ACL masks), CIDR prefixes, and interface masks are recognized. Without explicit prefixes it preserves /24 IPv4 and /64 IPv6 host portions. IPv6 class bits stay unchanged. Special default, loopback, link-local, multicast and broadcast addresses stay unchanged. This is structural pseudonymization, not cryptographic privacy: it reveals relationships and a known original/mapped pair can reveal the permutation. It does not hide network size or topology.
 
 Mappings can use publicly routable synthetic addresses; this is not a private-address allocator. Use only in an isolated lab after checking all dependencies. A broad or incompatible prefix constraint can force label replacements, explicitly reported in the interface. Unknown vendor syntax is not guaranteed to be parsed correctly. Subnet masks and special addresses are intentionally retained. Adding/removing files can change the batch mapping; export related devices together.
 
@@ -100,6 +100,24 @@ Fixes credential leakage caused by hostname/command keyword collisions, includin
 
 Regression coverage includes keyword hostnames, alias collisions, VRF references, numeric RADIUS/TACACS keys, retained key-chain IDs, CRLF input, banners containing credential-like text, and metadata-only totals. Unknown hostname references and unusual Cisco syntax still need review.
 
-## Privacy hardening (review branch)
+## Version 27.0.1 privacy hardening
 
-Use the AI-safe preset to enable the existing redaction options, label-mode IP handling, anonymous filenames, and separate explicit username, MAC and circuit-ID removal. Changes are visible in the preview. Additional substitutions are not included in the legacy replacement counters. Export warns about disabled options and possible remaining secret keywords; the scan is heuristic and cannot certify that a file is safe. Review complete outputs, including beyond preview limits. Logical mode uses a fresh system-random mapping on each recomputation and remains reversible pseudonymization. See [privacy review](PRIVACY-REVIEW.md) and [security policy](SECURITY.md). Read [Before you paste that show-tech into AI](https://www.waynelyon.com/notes/before-you-paste-show-tech.html) for context. No guarantee of sanitizing arbitrary diagnostic dumps.
+Use the AI-safe preset to enable the existing redaction options, label-mode IP handling, anonymous filenames, and separate explicit username, MAC and circuit-ID removal. Changes are visible in the preview. In v27.0.2 extra substitutions contribute to the metadata count. Export warns about disabled options and possible remaining secret keywords; the scan is heuristic and cannot certify that a file is safe. Review complete outputs, including beyond preview limits. Logical mode uses a fresh system-random mapping on each recomputation and remains reversible pseudonymization. See [privacy review](PRIVACY-REVIEW.md) and [security policy](SECURITY.md). Read [Before you paste that show-tech into AI](https://www.waynelyon.com/notes/before-you-paste-show-tech.html) for context. No guarantee of sanitizing arbitrary diagnostic dumps.
+
+## Version 27.0.2 (build 9)
+
+Independent RFC1918 IPv4, other IPv4 (including public and non-RFC1918 special-use unicast), and IPv6 controls; protocol-special addresses and recognized masks remain unchanged. Selective replacement uses labels, even if logical mode is selected, to avoid collisions with retained addresses. All privacy choices persist. Known SNMPv3, PPP and explicit diagnostic username fields are now covered. Extra substitutions count as metadata changes. Residual-secret detection examines individual fields and lists cleaned line numbers per file before export; counts are heuristic and not a safety guarantee. Review complete files before sharing. The screenshots show an earlier UI. The latest downloadable release may lag source; verify the release version before using it.
+
+## Optional signed and notarized distribution
+
+The default CI and local release builds are ad-hoc signed. A maintainer with an installed Apple Developer ID Application certificate and an existing notarytool Keychain profile can run:
+
+```sh
+SIGNING_IDENTITY="Developer ID Application: YOUR NAME (TEAMID)" NOTARY_PROFILE="cisco-cleaner-notary" zsh release.sh
+```
+
+The script uses hardened runtime, submits a temporary archive, staples and validates the ticket, checks Gatekeeper, and creates a fresh final archive and SHA-256 checksum. Do not commit credentials or export private keys to this repository. CI retains the tested ad-hoc universal archive and checksum as an Actions artifact for 14 days; this is not a published GitHub release. Review the archive and release notes before publishing.
+
+## Licensing
+
+No explicit project license has been selected by the copyright holder. Public access to source is not a grant of redistribution rights. The maintainer must choose the intended terms before describing this project as open source or granting redistribution permissions.
