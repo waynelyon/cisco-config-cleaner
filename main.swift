@@ -74,6 +74,8 @@ final class Cleaner {
             return redactValues(line, prefix + #"(?:version\h+(?:1|2c)\h+)?"# + value)
         }
         // Commands with extra fields before the value must be handled before generic keywords.
+        // MKA references are not secret values; retain the referenced key-chain name.
+        if trimmed.range(of: #"(?i)^mka\h+pre-shared-key\h+key-chain\h+\S+\h*$"#, options:.regularExpression) != nil { return line }
         let specialPatterns = [
             #"(?i)\b(?:ntp\h+)?authentication-key\h+\d+\h+(?:md5|sha1|sha2|cmac-aes-128|hmac-sha1|hmac-sha2-256)\h+(?:(?:clear|encrypted|plain|hash)\h+)?"# + value,
             #"(?i)\bpre-shared-key\h+address\h+\S+(?:\h+\S+)?\h+key\h+(?:(?:0|6|7)\h+)?"# + value,
@@ -205,7 +207,7 @@ final class Cleaner {
                 let indent = line.prefix { $0 == " " || $0 == "\t" }.count
                 if command == "!" || command.lowercased() == "end" { chainIndent = nil }
                 if let depth = chainIndent, !command.isEmpty, !command.hasPrefix("!"), indent <= depth { chainIndent = nil }
-                if command.range(of: #"(?i)^key\h+chain\h+\S+\h*$"#, options:.regularExpression) != nil { chainIndent = indent }
+                if command.range(of: #"(?i)^key\h+chain\h+\S+(?:\h+macsec)?\h*$"#, options:.regularExpression) != nil { chainIndent = indent }
                 return redactCredentialLine(line, keyChainID: chainIndent.map { indent > $0 } ?? false)
             }.joined(separator: "\n")
         }
@@ -267,6 +269,23 @@ final class Model: ObservableObject {
     @Published var schemeMode = true { didSet { optionsChanged() } }
     @Published var mappingNote = ""
     @Published var secret = true { didSet { optionsChanged() } }
+    @Published var anonymousNames = false { didSet { optionsChanged() } }
+    @Published var redactUsernames = false { didSet { optionsChanged() } }
+    @Published var redactMACs = false { didSet { optionsChanged() } }
+    @Published var redactCircuitIDs = false { didSet { optionsChanged() } }
+    var removeExtraIdentities: Bool { redactUsernames && redactMACs && redactCircuitIDs }
+    func aiSafePreset() {
+        restoringOptions = true
+        host = true; ip = true; secret = true; schemeMode = false
+        identityOptions = IdentityOptions()
+        anonymousNames = true; redactUsernames = true; redactMACs = true; redactCircuitIDs = true
+        restoringOptions = false
+        saveOptions()
+        refresh()
+    }
+    var weakenedProtection: Bool {
+        !secret || !host || !ip || identityOptions != IdentityOptions()
+    }
     @Published var identityOptions = IdentityOptions() { didSet { optionsChanged() } }
     @Published var status = "Files stay on this Mac"
     private let defaults: UserDefaults?
@@ -307,6 +326,8 @@ final class Model: ObservableObject {
         schemeMode = true
         secret = true
         identityOptions = IdentityOptions()
+        anonymousNames = false
+        redactUsernames = false; redactMACs = false; redactCircuitIDs = false
         restoringOptions = false
         saveOptions()
         refresh()
@@ -366,7 +387,7 @@ final class Model: ObservableObject {
         importNotice = queueFull ? " • Queue limit reached; remaining files were not added" : ""
         refresh()
     }
-    private static func cleanFiles(_ input: [ConfigFile], host: Bool, ip: Bool, schemeMode: Bool, secret: Bool, identityOptions: IdentityOptions) -> ([ConfigFile],String) {
+    private static func cleanFiles(_ input: [ConfigFile], host: Bool, ip: Bool, schemeMode: Bool, secret: Bool, identityOptions: IdentityOptions, anonymousNames: Bool, redactUsernames: Bool, redactMACs: Bool, redactCircuitIDs: Bool) -> ([ConfigFile],String) {
         var files = input
         let ready = files.filter { $0.error == nil }
         let cleaner = Cleaner()
@@ -374,12 +395,19 @@ final class Model: ObservableObject {
         let mappingNote = scheme?.warning ?? ""
         if host { for file in ready { cleaner.discoverHosts(file.original) } }
         var names = Set<String>()
+        var deviceNumber = 0
         for index in files.indices {
             guard files[index].error == nil else { continue }
             files[index].cleaned = cleaner.clean(files[index].original,hostname:host,addresses:ip,secrets:secret,scheme:scheme,marked:true,identityOptions:identityOptions)
             files[index].counts = cleaner.counts
+            let extra = Self.extraIdentityRedaction(files[index].cleaned, usernames:redactUsernames, macs:redactMACs, circuits:redactCircuitIDs)
+            if extra != files[index].cleaned {
+                files[index].cleaned = extra
+                // Extra rules are shown in the diff, not counted as Cisco-specific replacements.
+            }
+            deviceNumber += 1
             let url = files[index].url
-            var name = cleanName(url); var suffix = 2
+            var name = anonymousNames ? "device-\(deviceNumber)-clean.cfg" : cleanName(url); var suffix = 2
             while names.contains(name.lowercased()) {
                 name = url.deletingPathExtension().lastPathComponent + "-\(suffix)-clean" + (url.pathExtension.isEmpty ? "" : "." + url.pathExtension); suffix += 1
             }
@@ -392,13 +420,14 @@ final class Model: ObservableObject {
         cleaningQueue.cancelAllOperations()
         let revision = generation, snapshot = files
         let host = self.host, ip = self.ip, schemeMode = self.schemeMode, secret = self.secret, identityOptions = self.identityOptions
+        let anonymousNames = self.anonymousNames, redactUsernames = self.redactUsernames, redactMACs = self.redactMACs, redactCircuitIDs = self.redactCircuitIDs
         let apply: ([ConfigFile],String) -> Void = { [weak self] files, note in
             guard let self = self, self.generation == revision else { return }
             self.files = files; self.mappingNote = note; self.isProcessing = false
             self.status = (files.isEmpty ? "Files stay on this Mac" : "\(self.ready.count) ready • \(files.count - self.ready.count) unreadable") + self.importNotice
         }
         guard backgroundCleaning && !files.isEmpty else {
-            let result = Self.cleanFiles(snapshot,host:host,ip:ip,schemeMode:schemeMode,secret:secret,identityOptions:identityOptions)
+            let result = Self.cleanFiles(snapshot,host:host,ip:ip,schemeMode:schemeMode,secret:secret,identityOptions:identityOptions,anonymousNames:anonymousNames,redactUsernames:redactUsernames,redactMACs:redactMACs,redactCircuitIDs:redactCircuitIDs)
             apply(result.0,result.1); return
         }
         isProcessing = true; status = "Cleaning configurations…"
@@ -406,7 +435,7 @@ final class Model: ObservableObject {
         let operation = BlockOperation()
         operation.addExecutionBlock { [weak operation] in
             guard let operation = operation, !operation.isCancelled else { return }
-            let result = Self.cleanFiles(snapshot,host:host,ip:ip,schemeMode:schemeMode,secret:secret,identityOptions:identityOptions)
+            let result = Self.cleanFiles(snapshot,host:host,ip:ip,schemeMode:schemeMode,secret:secret,identityOptions:identityOptions,anonymousNames:anonymousNames,redactUsernames:redactUsernames,redactMACs:redactMACs,redactCircuitIDs:redactCircuitIDs)
             DispatchQueue.main.async {
                 guard !operation.isCancelled else { return }
                 apply(result.0,result.1)
@@ -430,7 +459,7 @@ final class Model: ObservableObject {
     }
     func exportText(_ file: ConfigFile) -> String {
         let newline = file.cleaned.contains("\r\n") ? "\r\n" : "\n"
-        return [
+         return [
             "! ANONYMIZED REVIEW COPY — NOT A PRODUCTION CONFIGURATION",
             "! * before an address marks an anonymized value; remove only that leading * to restore IP syntax.",
             "! [REDACTED] replaces a secret. Supply appropriate lab credentials before use.",
@@ -440,8 +469,37 @@ final class Model: ObservableObject {
             "!"
         ].joined(separator:newline) + newline + file.cleaned
     }
+    // Additional identity rules operate on the reviewed output, before preview and export.
+    static func extraIdentityRedaction(_ text: String, usernames: Bool = true, macs: Bool = true, circuits: Bool = true) -> String {
+        var patterns: [String] = []
+        if usernames { patterns.append(#"(?im)^(\h*username\h+)(\S+)"#) }
+        if circuits { patterns.append(#"(?im)^(\h*(?:circuit-id|circuit-identifier)\h+)([^\r\n]+)"#) }
+        var output = text
+        for pattern in patterns {
+            let regex = try! NSRegularExpression(pattern:pattern)
+            output = regex.stringByReplacingMatches(in:output,range:NSRange(output.startIndex...,in:output),withTemplate:"$1[REDACTED]")
+        }
+        if macs {
+            output = replace(output, #"(?i)(?<![0-9a-f])(?:[0-9a-f]{4}\.){2}[0-9a-f]{4}(?![0-9a-f])|(?<![0-9a-f:])(?:[0-9a-f]{2}(?::|-)){5}[0-9a-f]{2}(?![0-9a-f:])"#) { _ in "[MAC_REDACTED]" }
+        }
+        return output
+    }
+    // Deliberately broad heuristic; never claim zero findings means safe.
+    static func possibleSecretLines(_ text: String) -> Int {
+        let regex = try! NSRegularExpression(pattern:#"(?im)^(?=[^\r\n]*\b(?:api[-_ ]?key|access[-_ ]?token|client[-_ ]?secret|password|secret|community|private[-_ ]?key|key-string|pre-shared-key)\b)(?![^\r\n]*\[REDACTED\])[^\r\n]+$"#)
+        return regex.numberOfMatches(in:text,range:NSRange(text.startIndex...,in:text))
+    }
     func save() {
         guard !isProcessing else { return }
+        let possible = ready.reduce(0) { $0 + Self.possibleSecretLines($1.cleaned) }
+        if weakenedProtection || !anonymousNames || !removeExtraIdentities || possible > 0 {
+            let warning = NSAlert()
+            warning.messageText = "Review privacy options before exporting"
+            warning.informativeText = "\(possible) lines matched the broad residual-secret heuristic. It can flag harmless commands and miss unsupported secrets. Review the complete output and any disabled protections before sharing."
+            warning.addButton(withTitle:"Continue")
+            warning.addButton(withTitle:"Cancel")
+            guard warning.runModal() == .alertFirstButtonReturn else { return }
+        }
         let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true; panel.prompt = "Save clean files"
         panel.message = "Save \(ready.count) clean copies. Existing files will not be overwritten."
         panel.directoryURL = rememberedFolder(.output)
@@ -455,11 +513,13 @@ final class Model: ObservableObject {
         guard !isProcessing else { throw CocoaError(.userCancelled) }
         var saved: [URL] = []
         do {
-            for file in ready {
-                var destination = folder.appendingPathComponent(file.outputName); var index = 2
+            for (fileIndex,file) in ready.enumerated() {
+                let safeName = anonymousNames ? "device-\(fileIndex + 1)-clean.cfg" : file.outputName
+                var destination = folder.appendingPathComponent(safeName); var index = 2
                 while FileManager.default.fileExists(atPath:destination.path) {
                     let ext = file.url.pathExtension
-                    destination = folder.appendingPathComponent(file.url.deletingPathExtension().lastPathComponent + "-\(index)-clean" + (ext.isEmpty ? "" : "." + ext)); index += 1
+                    let collisionName = anonymousNames ? "device-\(fileIndex + 1)-\(index)-clean.cfg" : file.url.deletingPathExtension().lastPathComponent + "-\(index)-clean" + (ext.isEmpty ? "" : "." + ext)
+                    destination = folder.appendingPathComponent(collisionName); index += 1
                 }
                 try Data(exportText(file).utf8).write(to:destination,options:.withoutOverwriting)
                 saved.append(destination)
@@ -683,7 +743,16 @@ struct ContentView: View {
             Text("* = anonymized address · Masks stay valid in logical mode · Remove only the leading * for lab syntax").font(.system(size:11)).foregroundColor(.secondary)
             if !model.mappingNote.isEmpty { Text(model.mappingNote).font(.system(size:11)).foregroundColor(.orange) }
             Divider()
-            Text("Additional redaction").font(.system(size:12,weight:.medium))
+            HStack {
+                Text("Additional redaction").font(.system(size:12,weight:.medium))
+                Spacer()
+                Button("AI-safe preset") { model.aiSafePreset() }.controlSize(.small)
+            }
+            Toggle("Anonymize export filenames",isOn:$model.anonymousNames).toggleStyle(.checkbox)
+            Toggle("Usernames (explicit commands)",isOn:$model.redactUsernames).toggleStyle(.checkbox)
+            Toggle("MAC addresses",isOn:$model.redactMACs).toggleStyle(.checkbox)
+            Toggle("Circuit IDs (explicit commands)",isOn:$model.redactCircuitIDs).toggleStyle(.checkbox)
+            Text("Extra identity redaction is visible in the cleaned preview; extra substitutions are not included in the legacy replacement counters.").font(.system(size:11)).foregroundColor(.secondary)
             LazyVGrid(columns:[GridItem(.flexible(),alignment:.leading),GridItem(.flexible(),alignment:.leading),GridItem(.flexible(),alignment:.leading)],alignment:.leading,spacing:8) {
                 Toggle("Remove banners",isOn:$model.identityOptions.banners)
                 Toggle("Location & contact",isOn:$model.identityOptions.location)

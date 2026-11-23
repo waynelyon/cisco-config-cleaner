@@ -101,11 +101,11 @@ final class AddressScheme {
         if !found6 { for i in 8..<16 { allowed6[i] = 0 } }
         // Preserve IPv6 address class and the global/ULA prefix's first 16 bits.
         allowed6[0] = 0; allowed6[1] = 0
-        var state: UInt64 = 0xA17C9E5D1234ABCD
-        func randomByte() -> UInt8 { state ^= state << 13; state ^= state >> 7; state ^= state << 17; return UInt8(state & 255) }
-        if let first = values4.first {
-            for trial in 0..<512 {
-                let candidate = (trial == 0 ? (Self.number(first) ^ 0x0A321400) : Self.number((0..<4).map { _ in randomByte() })) & allowed4
+        var rng = SystemRandomNumberGenerator()
+        func randomByte() -> UInt8 { UInt8.random(in: UInt8.min...UInt8.max, using: &rng) }
+        if has4 {
+            for _ in 0..<512 {
+                let candidate = Self.number((0..<4).map { _ in randomByte() }) & allowed4
                 guard candidate != 0 else { continue }
                 if values4.allSatisfy({ !Self.special(Self.octets(Self.number($0) ^ candidate)) }) { key4 = candidate; break }
             }
