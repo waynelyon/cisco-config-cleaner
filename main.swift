@@ -3,8 +3,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 // Compiled into the executable so an already-running older process cannot report a newly installed version.
-let appVersion = "27.0.0"
-let appBuild = "7"
+let appVersion = "27.0.1"
+let appBuild = "8"
 let appVersionLabel = "v\(appVersion) (build \(appBuild))"
 
 func replace(_ text: String, _ pattern: String, _ transform: (String) -> String) -> String {
@@ -741,7 +741,9 @@ final class App: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
     func application(_ sender: NSApplication, openFiles filenames: [String]) { model.add(filenames.map { URL(fileURLWithPath:$0) }) }
 }
-if CommandLine.arguments.contains("--self-test") {
+if CommandLine.arguments.contains("--version") {
+    print(appVersionLabel)
+} else if CommandLine.arguments.contains("--self-test") {
     let c = Cleaner()
     let input = "hostname edge-1\nusername admin secret 9 HASH\nip address 10.0.0.1 255.255.255.0\nneighbor 10.0.0.1\nipv6 address 2001:db8::1/64\nsnmp-server community PRIVATE RO\ntacacs-server key 7 ABC\n"
     let output = c.clean(input,hostname:true,addresses:true,secrets:true)
@@ -821,7 +823,7 @@ if CommandLine.arguments.contains("--self-test") {
         assert(cleaner.clean(source,hostname:false,addresses:false,secrets:true) == expected)
         assert(cleaner.clean(expected,hostname:false,addresses:false,secrets:true) == expected)
     }
-    assert(appVersionLabel == "v27.0.0 (build 7)")
+    assert(appVersionLabel == "v27.0.1 (build 8)")
     let suite = "local.cisco.configcleaner.tests." + UUID().uuidString
     let store = UserDefaults(suiteName:suite)!
     let firstLaunch = Model(defaults:store)

@@ -10,6 +10,9 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" releases
 for arch in arm64 x86_64; do
     swiftc -target "$arch-apple-macos$minimum_os" -module-cache-path "$work/cache-$arch" AddressScheme.swift IdentityOptions.swift CoverageTests.swift SchemeTests.swift main.swift -o "$work/$arch"
 done
+version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Resources/Info.plist)
+build=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' Resources/Info.plist)
+[[ "$("$work/$(uname -m)" --version)" == "v$version (build $build)" ]] || { print -u2 'Executable and bundle versions disagree'; exit 1; }
 "$work/$(uname -m)" --self-test
 lipo -create "$work/arm64" "$work/x86_64" -output "$app/Contents/MacOS/CiscoConfigCleaner"
 cp Resources/Info.plist "$app/Contents/Info.plist"
