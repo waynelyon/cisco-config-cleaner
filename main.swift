@@ -154,7 +154,7 @@ final class Cleaner {
     }
     var hosts: [String:String] = [:], ips: [String:String] = [:]
     func alias(_ value: String, host: Bool) -> String {
-        if host { if hosts[value] == nil { hosts[value] = "DEVICE_\(hosts.count + 1)" }; return hosts[value]! }
+        if host { let value = value.lowercased(); if hosts[value] == nil { hosts[value] = "DEVICE_\(hosts.count + 1)" }; return hosts[value]! }
         if ips[value] == nil { ips[value] = "IP_\(ips.count + 1)" }; return ips[value]!
     }
     func discoverHosts(_ input: String) {
@@ -210,7 +210,7 @@ final class Cleaner {
             // Replace only known hostname value positions; never command keywords or generated aliases.
             let regex = try! NSRegularExpression(pattern:hostnameValuePattern)
             for match in regex.matches(in:text,range:NSRange(text.startIndex...,in:text)).reversed() {
-                guard let range = Range(match.range(at:2),in:text), let replacement = hosts[String(text[range])] else { continue }
+                guard let range = Range(match.range(at:2),in:text), let replacement = hosts[String(text[range]).lowercased()] else { continue }
                 if text[range] != replacement { text.replaceSubrange(range,with:replacement); counts[0] += 1 }
             }
         }

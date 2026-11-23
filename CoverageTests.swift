@@ -7,6 +7,7 @@ func expectSecret(_ source: String, _ expected: String) {
 }
 
 func runCoverageTests() {
+    assert(Cleaner().clean("hostname edge\nntp server EDGE\nlogging host Edge",hostname:true,addresses:false,secrets:true) == "hostname DEVICE_1\nntp server DEVICE_1\nlogging host DEVICE_1")
     let bom = "\u{FEFF}hostname edge\rpassword 0 DEMO"
     assert(Cleaner().clean(bom,hostname:true,addresses:false,secrets:true) == "hostname DEVICE_1\rpassword 0 [REDACTED]")
     assert(Cleaner().clean(bom,hostname:false,addresses:false,secrets:false) == bom)
