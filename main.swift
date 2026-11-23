@@ -221,7 +221,7 @@ final class Cleaner {
         } else if addresses {
             text = text.components(separatedBy:"\n").map { line in
                 var result = line
-                for token in AddressScheme.tokens(line).reversed() {
+                for token in AddressScheme.tokens(line).reversed() where !token.marked {
                     if let range = Range(token.range,in:result) {
                         result.replaceSubrange(range,with:(marked ? "*" : "") + alias(AddressScheme.string(token.bytes),host:false))
                         counts[1] += 1

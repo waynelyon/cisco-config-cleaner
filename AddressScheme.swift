@@ -9,6 +9,7 @@ final class AddressScheme {
         let range: NSRange
         let value: String
         let bytes: [UInt8]
+        var marked = false
         var mask = false
         var wildcard = false
     }
@@ -47,7 +48,7 @@ final class AddressScheme {
         var result: [Token] = regex.matches(in:line,range:NSRange(location:0,length:ns.length)).compactMap { match in
             let value = ns.substring(with:match.range)
             guard let data = bytes(value) else { return nil }
-            return Token(range:match.range,value:value,bytes:data)
+            return Token(range:match.range,value:value,bytes:data,marked:match.range.location > 0 && ns.substring(with:NSRange(location:match.range.location - 1,length:1)) == "*")
         }
         let lower = line.lowercased()
         let acl = lower.contains("access-list") || lower.trimmingCharacters(in:.whitespaces).hasPrefix("permit ") || lower.trimmingCharacters(in:.whitespaces).hasPrefix("deny ")
@@ -72,7 +73,7 @@ final class AddressScheme {
             for line in config.components(separatedBy:.newlines) {
                 let tokens = Self.tokens(line)
                 let ns = line as NSString
-                for token in tokens {
+                for token in tokens where !token.marked {
                     if token.mask {
                         let raw = Self.number(token.bytes)
                         // Command context distinguishes ACL wildcards from identically spelled netmasks.
@@ -120,7 +121,7 @@ final class AddressScheme {
         var count = 0
         let lines = text.components(separatedBy:"\n").map { line -> String in
             var result = line
-            for token in Self.tokens(line).reversed() where !token.mask && !Self.special(token.bytes) {
+            for token in Self.tokens(line).reversed() where !token.marked && !token.mask && !Self.special(token.bytes) {
                 let replacement: String
                 if token.bytes.count == 4 {
                     replacement = key4 == 0 ? label(Self.string(token.bytes)) : Self.string(Self.octets(Self.number(token.bytes) ^ key4))

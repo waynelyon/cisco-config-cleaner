@@ -1,6 +1,11 @@
 import Foundation
 
 func runSchemeTests() {
+    let markedInput = "ip address *10.50.20.1 255.255.255.0\nneighbor *2001:db8::1"
+    let repeatCleaner = Cleaner()
+    assert(repeatCleaner.clean(markedInput,hostname:false,addresses:true,secrets:false,scheme:AddressScheme([markedInput]),marked:true) == markedInput)
+    assert(repeatCleaner.counts[1] == 0)
+    assert(repeatCleaner.clean("neighbor *192.0.2.1",hostname:false,addresses:true,secrets:false,marked:true) == "neighbor *192.0.2.1")
     let labels = Cleaner()
     let labelOutput = labels.clean("time 12:34:56\nneighbor ::ffff:192.0.2.1\nneighbor 0:0:0:0:0:ffff:c000:201",hostname:false,addresses:true,secrets:false,marked:true)
     let labelLines = labelOutput.components(separatedBy:"\n")
