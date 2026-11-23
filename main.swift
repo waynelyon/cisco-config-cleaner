@@ -74,6 +74,8 @@ final class Cleaner {
             return redactValues(line, prefix + #"(?:version\h+(?:1|2c)\h+)?"# + value)
         }
         // Commands with extra fields before the value must be handled before generic keywords.
+        // MKA references are not secret values; retain the referenced key-chain name.
+        if trimmed.range(of: #"(?i)^mka\h+pre-shared-key\h+key-chain\h+\S+\h*$"#, options:.regularExpression) != nil { return line }
         let specialPatterns = [
             #"(?i)\b(?:ntp\h+)?authentication-key\h+\d+\h+(?:md5|sha1|sha2|cmac-aes-128|hmac-sha1|hmac-sha2-256)\h+(?:(?:clear|encrypted|plain|hash)\h+)?"# + value,
             #"(?i)\bpre-shared-key\h+address\h+\S+(?:\h+\S+)?\h+key\h+(?:(?:0|6|7)\h+)?"# + value,
@@ -267,6 +269,18 @@ final class Model: ObservableObject {
     @Published var schemeMode = true { didSet { optionsChanged() } }
     @Published var mappingNote = ""
     @Published var secret = true { didSet { optionsChanged() } }
+    @Published var anonymousNames = false
+    @Published var removeExtraIdentities = false
+    func aiSafePreset() {
+        resetOptions()
+        schemeMode = false
+        anonymousNames = true
+        removeExtraIdentities = true
+        refresh()
+    }
+    var weakenedProtection: Bool {
+        !secret || !host || !ip || identityOptions != IdentityOptions()
+    }
     @Published var identityOptions = IdentityOptions() { didSet { optionsChanged() } }
     @Published var status = "Files stay on this Mac"
     private let defaults: UserDefaults?
@@ -307,6 +321,8 @@ final class Model: ObservableObject {
         schemeMode = true
         secret = true
         identityOptions = IdentityOptions()
+        anonymousNames = false
+        removeExtraIdentities = false
         restoringOptions = false
         saveOptions()
         refresh()
@@ -430,6 +446,7 @@ final class Model: ObservableObject {
     }
     func exportText(_ file: ConfigFile) -> String {
         let newline = file.cleaned.contains("\r\n") ? "\r\n" : "\n"
+        let cleaned = removeExtraIdentities ? Self.extraIdentityRedaction(file.cleaned) : file.cleaned
         return [
             "! ANONYMIZED REVIEW COPY — NOT A PRODUCTION CONFIGURATION",
             "! * before an address marks an anonymized value; remove only that leading * to restore IP syntax.",
@@ -438,10 +455,31 @@ final class Model: ObservableObject {
             "! Synthetic addresses may be publicly routable. Validate all addressing and dependencies in an isolated lab.",
             "! IP mode: " + (ip ? (schemeMode ? "logical scheme; masks preserved" : "labels (not valid IP addresses)") : "original addresses retained"),
             "!"
-        ].joined(separator:newline) + newline + file.cleaned
+        ].joined(separator:newline) + newline + cleaned
+    }
+    // Conservative export-only rules for common explicit identity fields.
+    static func extraIdentityRedaction(_ text: String) -> String {
+        let patterns = [
+            #"(?im)^(\h*username\h+)(\S+)"#,
+            #"(?im)^(\h*(?:circuit-id|circuit-identifier)\h+)([^\r\n]+)"#
+        ]
+        var output = text
+        for pattern in patterns {
+            let regex = try! NSRegularExpression(pattern:pattern)
+            output = regex.stringByReplacingMatches(in:output,range:NSRange(output.startIndex...,in:output),withTemplate:"$1[REDACTED]")
+        }
+        return replace(output, #"(?i)(?<![0-9a-f])(?:[0-9a-f]{4}\.){2}[0-9a-f]{4}(?![0-9a-f])|(?<![0-9a-f:])(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}(?![0-9a-f:])"#) { _ in "[MAC_REDACTED]" }
     }
     func save() {
         guard !isProcessing else { return }
+        if weakenedProtection || !anonymousNames || !removeExtraIdentities {
+            let warning = NSAlert()
+            warning.messageText = "Review privacy options before exporting"
+            warning.informativeText = "Some identity protections are disabled, or original filenames will be retained. Review the cleaned output; secrets and customer identifiers may remain."
+            warning.addButton(withTitle:"Continue")
+            warning.addButton(withTitle:"Cancel")
+            guard warning.runModal() == .alertFirstButtonReturn else { return }
+        }
         let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true; panel.prompt = "Save clean files"
         panel.message = "Save \(ready.count) clean copies. Existing files will not be overwritten."
         panel.directoryURL = rememberedFolder(.output)
@@ -455,11 +493,13 @@ final class Model: ObservableObject {
         guard !isProcessing else { throw CocoaError(.userCancelled) }
         var saved: [URL] = []
         do {
-            for file in ready {
-                var destination = folder.appendingPathComponent(file.outputName); var index = 2
+            for (fileIndex,file) in ready.enumerated() {
+                let safeName = anonymousNames ? "device-\(fileIndex + 1)-clean.cfg" : file.outputName
+                var destination = folder.appendingPathComponent(safeName); var index = 2
                 while FileManager.default.fileExists(atPath:destination.path) {
                     let ext = file.url.pathExtension
-                    destination = folder.appendingPathComponent(file.url.deletingPathExtension().lastPathComponent + "-\(index)-clean" + (ext.isEmpty ? "" : "." + ext)); index += 1
+                    let collisionName = anonymousNames ? "device-\(fileIndex + 1)-\(index)-clean.cfg" : file.url.deletingPathExtension().lastPathComponent + "-\(index)-clean" + (ext.isEmpty ? "" : "." + ext)
+                    destination = folder.appendingPathComponent(collisionName); index += 1
                 }
                 try Data(exportText(file).utf8).write(to:destination,options:.withoutOverwriting)
                 saved.append(destination)
@@ -683,7 +723,14 @@ struct ContentView: View {
             Text("* = anonymized address · Masks stay valid in logical mode · Remove only the leading * for lab syntax").font(.system(size:11)).foregroundColor(.secondary)
             if !model.mappingNote.isEmpty { Text(model.mappingNote).font(.system(size:11)).foregroundColor(.orange) }
             Divider()
-            Text("Additional redaction").font(.system(size:12,weight:.medium))
+            HStack {
+                Text("Additional redaction").font(.system(size:12,weight:.medium))
+                Spacer()
+                Button("AI-safe preset") { model.aiSafePreset() }.controlSize(.small)
+            }
+            Toggle("Anonymize export filenames",isOn:$model.anonymousNames).toggleStyle(.checkbox)
+            Toggle("Remove common usernames, MACs and circuit IDs on export",isOn:$model.removeExtraIdentities).toggleStyle(.checkbox)
+            if model.removeExtraIdentities { Text("Extra identity redaction is applied on export; review the saved copy before sharing.").font(.system(size:11)).foregroundColor(.secondary) }
             LazyVGrid(columns:[GridItem(.flexible(),alignment:.leading),GridItem(.flexible(),alignment:.leading),GridItem(.flexible(),alignment:.leading)],alignment:.leading,spacing:8) {
                 Toggle("Remove banners",isOn:$model.identityOptions.banners)
                 Toggle("Location & contact",isOn:$model.identityOptions.location)

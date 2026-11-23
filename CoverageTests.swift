@@ -7,6 +7,10 @@ func expectSecret(_ source: String, _ expected: String) {
 }
 
 func runCoverageTests() {
+    expectSecret("mka pre-shared-key key-chain SW1-SW2-MACSEC", "mka pre-shared-key key-chain SW1-SW2-MACSEC")
+    expectSecret("key chain SW1-SW2-MACSEC macsec\n key 100\n  key-string DEMO_KEY", "key chain SW1-SW2-MACSEC macsec\n key 100\n  key-string [REDACTED]")
+    let extra = Model.extraIdentityRedaction("username alice secret 9 [REDACTED]\nmac address-table static aabb.ccdd.eeff\ncircuit-id CUSTOMER-123")
+    assert(!extra.contains("alice") && !extra.contains("aabb.ccdd.eeff") && !extra.contains("CUSTOMER-123"))
     let exportFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try! FileManager.default.createDirectory(at:exportFolder,withIntermediateDirectories:true)
     defer { try? FileManager.default.removeItem(at:exportFolder) }
@@ -18,6 +22,10 @@ func runCoverageTests() {
     assert(firstExport[0].lastPathComponent == "router-clean.cfg" && secondExport[0].lastPathComponent == "router-2-clean.cfg")
     assert((try! String(contentsOf:originalURL,encoding:.utf8)) == "password 0 DEMO")
     assert(!(try! String(contentsOf:firstExport[0],encoding:.utf8)).contains("DEMO"))
+    exportModel.anonymousNames = true
+    let anonymous = try! exportModel.export(to:exportFolder)
+    assert(anonymous[0].lastPathComponent == "device-1-clean.cfg")
+    exportModel.anonymousNames = false
     exportModel.files = [ConfigFile(url:originalURL,cleaned:"safe",outputName:"partial-clean.cfg"),ConfigFile(url:originalURL,cleaned:"safe",outputName:String(repeating:"x",count:300))]
     assert((try? exportModel.export(to:exportFolder)) == nil)
     assert(exportModel.status == "Saved 1 files before an error")

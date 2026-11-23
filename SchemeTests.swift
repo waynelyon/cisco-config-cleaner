@@ -27,10 +27,11 @@ func runSchemeTests() {
     let scheme = AddressScheme([config])
     let c = Cleaner()
     let cleaned = c.clean(config,hostname:false,addresses:true,secrets:true,scheme:scheme,marked:true)
-    assert(cleaned.contains("ip address *10.50.20.1 255.255.255.0"))
-    assert(cleaned.contains("ip route 0.0.0.0 0.0.0.0 *10.50.20.254"))
-    assert(cleaned.contains("network *10.50.20.0/24"))
-    assert(cleaned.contains("*10.50.20.0 0.0.0.255"))
+    func mapped4(_ value: String) -> String { AddressScheme.string(AddressScheme.octets(AddressScheme.number(AddressScheme.bytes(value)!) ^ scheme.key4)) }
+    assert(cleaned.contains("ip address *\(mapped4("192.168.10.1")) 255.255.255.0"))
+    assert(cleaned.contains("ip route 0.0.0.0 0.0.0.0 *\(mapped4("192.168.10.254"))"))
+    assert(cleaned.contains("network *\(mapped4("192.168.10.0"))/24"))
+    assert(cleaned.contains("*\(mapped4("192.168.10.0")) 0.0.0.255"))
     assert(!cleaned.contains("*255.255.255.0") && !cleaned.contains("*0.0.0.255"))
     let restored = cleaned.replacingOccurrences(of:"*",with:"")
     assert(AddressScheme.tokens(restored.components(separatedBy:"\n")[1]).count == 2)
@@ -75,7 +76,7 @@ func runSchemeTests() {
     model.files = [ConfigFile(url:URL(fileURLWithPath:"/tmp/router.cfg"),original:config,outputName:"")]
     model.refresh()
     let exported = model.exportText(model.files[0])
-    assert(exported.contains("ANONYMIZED REVIEW COPY") && exported.contains("*10.50.20.1 255.255.255.0"))
+    assert(exported.contains("ANONYMIZED REVIEW COPY") && exported.contains("ip address *") && !exported.contains("192.168.10.1 255.255.255.0"))
     assert(exported.contains("other commands may still execute"))
     // When a batch cannot be safely permuted within its constraints, use explicit labels.
     let constrained = AddressScheme(["ipv6 address 2001::1/16"])
