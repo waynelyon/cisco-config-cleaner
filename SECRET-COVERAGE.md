@@ -8,7 +8,7 @@ Non-secret controls explicitly preserved include password encryption aes, key-ch
 
 ## Independent options
 
-All five additional options default on and can be disabled separately: banner removal, location/contact removal, domain-name redaction, description redaction, and serial-number redaction. Serial detection uses explicit license UDI, SN:, serial-number, system/chassis serial number and processor board ID fields. It also redacts repeated instances of discovered serials in that file, without changing product IDs or Serial interface names. Unlabeled serial values cannot reliably be identified by this rule.
+All five additional options default on and can be disabled separately: banner removal, location/contact removal, domain-name redaction, description redaction, and serial-number redaction. Serial detection uses explicit license UDI, SN:, serial-number, system/chassis serial number and processor board ID fields. It also redacts repeats in comments, descriptions and location/contact text. Other command values are not globally rewritten, so a serial matching a command keyword cannot corrupt configuration syntax. Unlabeled serial values cannot reliably be identified by this rule.
 
 Metadata changes have a separate counter included in per-file and batch totals. Removed banner/location lines and redacted metadata values each count as a change. Test cases verify option independence and byte-for-byte command preservation, including negative cases and repeated cleaning.
 

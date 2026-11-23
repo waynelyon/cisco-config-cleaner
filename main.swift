@@ -136,9 +136,19 @@ final class Cleaner {
             let regex = try! NSRegularExpression(pattern:pattern)
             let ns = result as NSString
             let serials = Set(regex.matches(in:result,range:NSRange(location:0,length:ns.length)).map { ns.substring(with:$0.range(withName:"serial")) })
-            for serial in serials.sorted(by: { $0.count > $1.count }) {
-                result = replace(result, #"(?<![A-Za-z0-9._/-])"# + NSRegularExpression.escapedPattern(for:serial) + #"(?![A-Za-z0-9._/-])"#) { _ in self.counts[3] += 1; return "[REDACTED]" }
+            for match in regex.matches(in:result,range:NSRange(result.startIndex...,in:result)).reversed() {
+                if let range = Range(match.range(withName:"serial"),in:result) {
+                    result.replaceSubrange(range,with:"[REDACTED]"); counts[3] += 1
+                }
             }
+            result = result.components(separatedBy:"\n").map { line in
+                guard line.range(of:#"(?i)^\h*(?:[!#]|description\h+|snmp-server\h+(?:location|contact)\h+)"#,options:.regularExpression) != nil else { return line }
+                var output = line
+                for serial in serials.sorted(by:{ $0.count > $1.count }) where serial != "REDACTED" {
+                    output = replace(output, #"(?<![A-Za-z0-9._/-])"# + NSRegularExpression.escapedPattern(for:serial) + #"(?![A-Za-z0-9._/-])"#) { _ in self.counts[3] += 1; return "[REDACTED]" }
+                }
+                return output
+            }.joined(separator:"\n")
         }
         return result
     }

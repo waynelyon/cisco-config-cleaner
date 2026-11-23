@@ -7,6 +7,9 @@ func expectSecret(_ source: String, _ expected: String) {
 }
 
 func runCoverageTests() {
+    var serialOptions = IdentityOptions.none; serialOptions.serials = true
+    let serialOutput = Cleaner().clean("serial-number password\npassword encryption aes\n! device password",hostname:false,addresses:false,secrets:true,identityOptions:serialOptions)
+    assert(serialOutput == "serial-number [REDACTED]\npassword encryption aes\n! device [REDACTED]")
     expectSecret("key\tchain KEYS\n key 42\n  key-string 0 DEMO", "key\tchain KEYS\n key 42\n  key-string 0 [REDACTED]")
     expectSecret("key  chain KEYS\n key 42", "key  chain KEYS\n key 42")
     expectSecret("snmp-server community password RO", "snmp-server community [REDACTED] RO")
