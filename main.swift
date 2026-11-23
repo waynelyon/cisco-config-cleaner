@@ -166,7 +166,8 @@ final class Cleaner {
         category = 2
         if secrets {
             // Hide hostname values from keyword-based secret rules, then restore them exactly.
-            let hostRegex = try! NSRegularExpression(pattern:hostnameValuePattern)
+            let protectedValuePattern = hostnameValuePattern.replacingOccurrences(of:"hostname|switchname",with:"hostname|switchname|username")
+            let hostRegex = try! NSRegularExpression(pattern:protectedValuePattern)
             var protectedHosts: [String:String] = [:]
             for match in hostRegex.matches(in:text,range:NSRange(text.startIndex...,in:text)).reversed() {
                 guard let range = Range(match.range(at:2),in:text) else { continue }

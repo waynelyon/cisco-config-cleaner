@@ -1,6 +1,14 @@
 import Foundation
 
+func expectSecret(_ source: String, _ expected: String) {
+    let cleaner = Cleaner()
+    assert(cleaner.clean(source,hostname:false,addresses:false,secrets:true) == expected, "Credential regression: " + source)
+    assert(cleaner.clean(expected,hostname:false,addresses:false,secrets:true) == expected, "Repeat cleaning changed commands")
+}
+
 func runCoverageTests() {
+    expectSecret("username password secret 9 DEMO_HASH", "username password secret 9 [REDACTED]")
+    expectSecret("username secret password 0 DEMO_SECRET", "username secret password 0 [REDACTED]")
     let cases: [(String,String)] = [
         ("ip ospf message-digest-key 1 7 md5 DEMO_KEY", "ip ospf message-digest-key 1 7 md5 [REDACTED]"),
         ("ip ospf message-digest-key 1 md5 3 DEMO_KEY", "ip ospf message-digest-key 1 md5 3 [REDACTED]"),
