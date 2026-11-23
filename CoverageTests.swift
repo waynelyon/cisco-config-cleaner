@@ -11,6 +11,14 @@ func runCoverageTests() {
     expectSecret("key chain SW1-SW2-MACSEC macsec\n key 100\n  key-string DEMO_KEY", "key chain SW1-SW2-MACSEC macsec\n key 100\n  key-string [REDACTED]")
     let extra = Model.extraIdentityRedaction("username alice secret 9 [REDACTED]\nmac address-table static aabb.ccdd.eeff\ncircuit-id CUSTOMER-123")
     assert(!extra.contains("alice") && !extra.contains("aabb.ccdd.eeff") && !extra.contains("CUSTOMER-123"))
+    assert(Model.extraIdentityRedaction("aa:bb:cc:dd:ee:ff AA-BB-CC-DD-EE-FF") == "[MAC_REDACTED] [MAC_REDACTED]")
+    assert(Model.extraIdentityRedaction("username alice secret 9 [REDACTED]",usernames:false) == "username alice secret 9 [REDACTED]")
+    assert(Model.possibleSecretLines("api_key TEST_TOKEN\npassword [REDACTED]") == 1)
+    let privacy = Model()
+    privacy.files = [ConfigFile(url:URL(fileURLWithPath:"/tmp/customer.cfg"),original:"username alice secret 9 DEMO\nmac address-table static aabb.ccdd.eeff\ncircuit-id CUSTOMER-123",outputName:"")]
+    privacy.aiSafePreset()
+    assert(privacy.files[0].outputName == "device-1-clean.cfg")
+    assert(!privacy.files[0].cleaned.contains("alice") && !privacy.files[0].cleaned.contains("CUSTOMER-123") && !privacy.files[0].cleaned.contains("DEMO"))
     let exportFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try! FileManager.default.createDirectory(at:exportFolder,withIntermediateDirectories:true)
     defer { try? FileManager.default.removeItem(at:exportFolder) }
