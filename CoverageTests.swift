@@ -7,6 +7,8 @@ func expectSecret(_ source: String, _ expected: String) {
 }
 
 func runCoverageTests() {
+    expectSecret("! comment\rpassword 0 DEMO_SECRET\r", "! comment\rpassword 0 [REDACTED]\r")
+    expectSecret("! comment\rpassword 0 DEMO_SECRET\nend", "! comment\npassword 0 [REDACTED]\nend")
     expectSecret("-----BEGIN PRIVATE KEY-----\nDEMO_PRIVATE\nMORE", "-----BEGIN PRIVATE KEY-----\n[REDACTED]")
     expectSecret(" certificate ca 01\nDEMO_CERT", " certificate ca 01\n[REDACTED]")
     expectSecret(#"password 0 "alpha\"bravo""#, "password 0 [REDACTED]")

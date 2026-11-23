@@ -68,7 +68,7 @@ final class AddressScheme {
         var values4: [[UInt8]] = [], values6: [[UInt8]] = []
         var found4 = false, found6 = false
         for config in configs {
-            for line in config.components(separatedBy:"\n") {
+            for line in config.components(separatedBy:.newlines) {
                 let tokens = Self.tokens(line)
                 let ns = line as NSString
                 for token in tokens {

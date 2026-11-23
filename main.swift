@@ -156,7 +156,8 @@ final class Cleaner {
     func clean(_ input: String, hostname: Bool, addresses: Bool, secrets: Bool, scheme: AddressScheme? = nil, marked: Bool = false, identity: Bool = false, identityOptions: IdentityOptions? = nil) -> String {
         counts = [0, 0, 0, 0]
         category = 0
-        var text = input
+        let crOnly = input.contains("\r") && !input.contains("\n")
+        var text = replace(input, #"\r(?!\n)"#) { _ in "\n" }
         // Remove banners before parsing commands so their arbitrary payload cannot alter parsing.
         let metadataOptions = identityOptions ?? (identity ? IdentityOptions() : .none)
         if metadataOptions.banners {
@@ -212,7 +213,7 @@ final class Cleaner {
             }
             text = tracked(text, "(?i)(?<![\\w:])(?:[0-9a-f]{0,4}:){2,}[0-9a-f:]{0,4}(?:%[a-z0-9_.-]+)?(?![\\w:])") { (marked ? "*" : "") + self.alias($0.lowercased(), host: false) }
         }
-        return text
+        return crOnly ? text.replacingOccurrences(of:"\n",with:"\r") : text
     }
 }
 func cleanName(_ url: URL) -> String {
