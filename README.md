@@ -107,3 +107,17 @@ Use the AI-safe preset to enable the existing redaction options, label-mode IP h
 ## Version 27.0.2 (build 9)
 
 Independent RFC1918 IPv4, other IPv4 (including public and non-RFC1918 special-use unicast), and IPv6 controls; protocol-special addresses and recognized masks remain unchanged. Selective replacement uses labels, even if logical mode is selected, to avoid collisions with retained addresses. All privacy choices persist. Known SNMPv3, PPP and explicit diagnostic username fields are now covered. Extra substitutions count as metadata changes. Residual-secret detection examines individual fields and lists cleaned line numbers per file before export; counts are heuristic and not a safety guarantee. Review complete files before sharing. The screenshots show an earlier UI. The latest downloadable release may lag source; verify the release version before using it.
+
+## Optional signed and notarized distribution
+
+The default CI and local release builds are ad-hoc signed. A maintainer with an installed Apple Developer ID Application certificate and an existing notarytool Keychain profile can run:
+
+```sh
+SIGNING_IDENTITY="Developer ID Application: YOUR NAME (TEAMID)" NOTARY_PROFILE="cisco-cleaner-notary" zsh release.sh
+```
+
+The script uses hardened runtime, submits a temporary archive, staples and validates the ticket, checks Gatekeeper, and creates a fresh final archive and SHA-256 checksum. Do not commit credentials or export private keys to this repository. CI retains the tested ad-hoc universal archive and checksum as an Actions artifact for 14 days; this is not a published GitHub release. Review the archive and release notes before publishing.
+
+## Licensing
+
+No explicit project license has been selected by the copyright holder. Public access to source is not a grant of redistribution rights. The maintainer must choose the intended terms before describing this project as open source or granting redistribution permissions.
