@@ -287,7 +287,7 @@ final class Model: ObservableObject {
         refresh()
     }
     var weakenedProtection: Bool {
-        !secret || !host || !ip || !addressSelection.all || identityOptions != IdentityOptions()
+        !secret || !host || !ip || !addressSelection.all || schemeMode || identityOptions != IdentityOptions()
     }
     @Published var identityOptions = IdentityOptions() { didSet { optionsChanged() } }
     @Published var status = "Files stay on this Mac"
@@ -494,7 +494,7 @@ final class Model: ObservableObject {
                 #"(?im)^\h*snmp-server\h+user\h+("# + identity + ")",
                 #"(?im)^\h*ppp\h+(?:pap\h+sent-username|chap\h+hostname)\h+("# + identity + ")",
                 #"(?im)^\h*snmp-server\h+host\h+(?:vrf\h+\S+\h+)?\S+\h+(?:vrf\h+\S+\h+)?(?:(?:traps|informs)\h+)?version\h+3\h+(?:(?:auth|noauth|priv)\h+)?("# + identity + ")",
-                #"(?im)^\h*(?:user(?:name)?|authenticated user|user name)\h*[:=]\h*("# + identity + ")"
+                #"(?im)^\h*(?:user(?:name)?|authenticated user|user[- ]name)\h*[:=]\h*("# + identity + ")"
             ]
         }
         if circuits { patterns.append(#"(?im)^\h*(?:circuit-id|circuit-identifier)\h+([^\r\n]+)"#) }
@@ -515,7 +515,7 @@ final class Model: ObservableObject {
     // Check each keyword's following value independently; never suppress an entire line
     // merely because an unrelated field was redacted. Only line numbers leave this helper.
     static func secretLineNumbers(_ text: String) -> [Int] {
-        let regex = try! NSRegularExpression(pattern:#"(?i)\b(?:api[-_ ]?key|access[-_ ]?token|client[-_ ]?secret|password|secret|community|private[-_ ]?key|key-string|pre-shared-key|idtoken)\b(?:\h*[:=]\h*|\h+)(?:(?:0|3|5|6|7|8|9|ascii|hex|clear|encrypted|md5|sha256|scrypt)\h+)*(\[REDACTED\]|[^\h\r\n]+)"#)
+        let regex = try! NSRegularExpression(pattern:#"(?i)\b(?:api[-_ ]?key|access[-_ ]?token|client[-_ ]?secret|password|secret|community|private[-_ ]?key|key-string|pre-shared-key|idtoken)\b(?:\h*[:=]\h*|\h+)(?:(?:0|3|5|6|7|8|9|ascii|hex|clear|encrypted|md5|sha256|scrypt)\h+)*(\[REDACTED\](?=\h|$)|[^\h\r\n]+)"#)
         let normalized = text.replacingOccurrences(of:"\r\n",with:"\n").replacingOccurrences(of:"\r",with:"\n")
         return normalized.components(separatedBy:"\n").enumerated().compactMap { index,line in
             let suspicious = regex.matches(in:line,range:NSRange(line.startIndex...,in:line)).contains { match in
@@ -971,7 +971,7 @@ if CommandLine.arguments.contains("--version") {
     assert(thirdLaunch.ip && !thirdLaunch.host && !thirdLaunch.secret && !thirdLaunch.schemeMode)
     assert(thirdLaunch.identityOptions.serials && thirdLaunch.identityOptions.domains && !thirdLaunch.identityOptions.banners)
     assert(thirdLaunch.files.isEmpty && thirdLaunch.selected == nil)
-    assert(store.dictionaryRepresentation().keys.filter { $0.hasPrefix("cleaning.") }.count == 9)
+    assert(store.dictionaryRepresentation().keys.filter { $0.hasPrefix("cleaning.") }.count == 16)
     let folderRoot = FileManager.default.temporaryDirectory.appendingPathComponent("cisco-folders-" + UUID().uuidString)
     let inputFolder = folderRoot.appendingPathComponent("input")
     let outputFolder = folderRoot.appendingPathComponent("output")
