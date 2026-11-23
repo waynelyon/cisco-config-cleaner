@@ -39,6 +39,17 @@ final class Cleaner {
         return result
     }
     func redactCredentialLine(_ line: String, keyChainID: Bool = false) -> String {
+        let pattern = line.range(of:#"(?i)^\h*username\h+"#,options:.regularExpression) != nil ? #"(?i)^(\h*username\h+)(\S+)"# : hostnameValuePattern
+        let regex = try! NSRegularExpression(pattern:pattern)
+        guard let match = regex.firstMatch(in:line,range:NSRange(line.startIndex...,in:line)), let range = Range(match.range(at:2),in:line) else {
+            return redactCredentialCommand(line,keyChainID:keyChainID)
+        }
+        let value = String(line[range])
+        let token = "HOSTVALUE" + UUID().uuidString.replacingOccurrences(of:"-",with:"")
+        var protected = line; protected.replaceSubrange(range,with:token)
+        return redactCredentialCommand(protected,keyChainID:keyChainID).replacingOccurrences(of:token,with:value)
+    }
+    func redactCredentialCommand(_ line: String, keyChainID: Bool = false) -> String {
         // Ignore comments/descriptions and negative commands, which contain no configured secret.
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasPrefix("!") || trimmed.hasPrefix("#") || trimmed.lowercased().hasPrefix("description ") || trimmed.lowercased().hasPrefix("no ") { return line }
@@ -178,16 +189,6 @@ final class Cleaner {
         }
         category = 2
         if secrets {
-            // Hide hostname values from keyword-based secret rules, then restore them exactly.
-            let protectedValuePattern = hostnameValuePattern.replacingOccurrences(of:"hostname|switchname",with:"hostname|switchname|username")
-            let hostRegex = try! NSRegularExpression(pattern:protectedValuePattern)
-            var protectedHosts: [String:String] = [:]
-            for match in hostRegex.matches(in:text,range:NSRange(text.startIndex...,in:text)).reversed() {
-                guard let range = Range(match.range(at:2),in:text) else { continue }
-                let token = "HOSTVALUE" + UUID().uuidString.replacingOccurrences(of:"-",with:"")
-                protectedHosts[token] = String(text[range])
-                text.replaceSubrange(range,with:token)
-            }
             // Keep multiline block headers/terminators while removing their payloads.
             text = redactValues(text, #"(?ms)^\h*-----BEGIN [^\r\n]*PRIVATE KEY-----\r?\n(?<value>.*?)(?=\r?\n\h*-----END [^\r\n]*PRIVATE KEY-----|\z)"#)
             text = redactValues(text, #"(?ims)^\h*certificate(?: ca| self-signed)?(?: [^\r\n]+)?\r?\n(?<value>.*?)(?=\r?\n\h*quit\h*\r?$|\z)"#)
@@ -200,7 +201,6 @@ final class Cleaner {
                 if command.range(of: #"(?i)^key\h+chain\h+\S+\h*$"#, options:.regularExpression) != nil { chainIndent = indent }
                 return redactCredentialLine(line, keyChainID: chainIndent.map { indent > $0 } ?? false)
             }.joined(separator: "\n")
-            for (token, value) in protectedHosts { text = text.replacingOccurrences(of:token,with:value) }
         }
         if let options = identityOptions { text = stripIdentity(text, options:options) }
         else if identity { text = stripIdentity(text) }
