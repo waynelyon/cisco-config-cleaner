@@ -207,7 +207,7 @@ final class Cleaner {
                 let indent = line.prefix { $0 == " " || $0 == "\t" }.count
                 if command == "!" || command.lowercased() == "end" { chainIndent = nil }
                 if let depth = chainIndent, !command.isEmpty, !command.hasPrefix("!"), indent <= depth { chainIndent = nil }
-                if command.range(of: #"(?i)^key\h+chain\h+\S+\h*$"#, options:.regularExpression) != nil { chainIndent = indent }
+                if command.range(of: #"(?i)^key\h+chain\h+\S+(?:\h+macsec)?\h*$"#, options:.regularExpression) != nil { chainIndent = indent }
                 return redactCredentialLine(line, keyChainID: chainIndent.map { indent > $0 } ?? false)
             }.joined(separator: "\n")
         }
