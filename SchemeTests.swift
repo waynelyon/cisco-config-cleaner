@@ -1,6 +1,10 @@
 import Foundation
 
 func runSchemeTests() {
+    let highWildcard = AddressScheme(["access-list 101 permit ip 10.1.2.3 255.0.0.0 any"])
+    assert(highWildcard.key4 != 0 && highWildcard.key4 & 0xff000000 == 0)
+    let explicitWildcard = AddressScheme(["network 10.1.2.3 wildcard-mask 255.0.0.0"])
+    assert(explicitWildcard.key4 != 0 && explicitWildcard.key4 & 0xff000000 == 0)
     let config = """
     interface Vlan10
      ip address 192.168.10.1 255.255.255.0

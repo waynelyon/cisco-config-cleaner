@@ -10,6 +10,7 @@ final class AddressScheme {
         let value: String
         let bytes: [UInt8]
         var mask = false
+        var wildcard = false
     }
     static let pattern = #"(?i)(?<![\w.:])(?:(?:[0-9a-f]{0,4}:){2,}(?:[0-9]{1,3}\.){3}[0-9]{1,3}|(?:[0-9]{1,3}\.){3}[0-9]{1,3}|(?:[0-9a-f]{0,4}:){2,}[0-9a-f:]{0,4})(?![\w.:])"#
     var key4: UInt32 = 0
@@ -53,12 +54,12 @@ final class AddressScheme {
         let addressList = lower.contains("name-server") || lower.contains("dns-server")
         for index in result.indices where result[index].bytes.count == 4 {
             let prefix = ns.substring(to:result[index].range.location)
-            if prefix.range(of:#"(?i)\b(?:netmask|wildcard-mask|subnet-mask)\h+$"#,options:.regularExpression) != nil { result[index].mask = true; continue }
+            if prefix.range(of:#"(?i)\b(?:netmask|wildcard-mask|subnet-mask)\h+$"#,options:.regularExpression) != nil { result[index].mask = true; result[index].wildcard = prefix.lowercased().contains("wildcard-mask"); continue }
             guard index > 0, !addressList, !result[index-1].mask, result[index-1].bytes.count == 4 else { continue }
             let gap = NSRange(location:NSMaxRange(result[index-1].range),length:result[index].range.location - NSMaxRange(result[index-1].range))
             guard ns.substring(with:gap).trimmingCharacters(in:.whitespaces).isEmpty else { continue }
             let n = number(result[index].bytes)
-            if contiguous(n) || contiguous(~n) || acl { result[index].mask = true }
+            if contiguous(n) || contiguous(~n) || acl { result[index].mask = true; result[index].wildcard = acl || !contiguous(n) }
         }
         return result
     }
@@ -74,8 +75,8 @@ final class AddressScheme {
                 for token in tokens {
                     if token.mask {
                         let raw = Self.number(token.bytes)
-                        // Low-bit masks are wildcard masks; noncontiguous ACL masks are wildcards too.
-                        let mask = Self.contiguous(raw) ? raw : ~raw
+                        // Command context distinguishes ACL wildcards from identically spelled netmasks.
+                        let mask = token.wildcard ? ~raw : raw
                         if mask != 0 { allowed4 &= mask; found4 = true }
                         continue
                     }
