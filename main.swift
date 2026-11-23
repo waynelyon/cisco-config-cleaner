@@ -446,6 +446,13 @@ final class Model: ObservableObject {
         panel.message = "Save \(ready.count) clean copies. Existing files will not be overwritten."
         panel.directoryURL = rememberedFolder(.output)
         guard panel.runModal() == .OK, let folder = panel.url else { return }
+        do { NSWorkspace.shared.activateFileViewerSelecting(try export(to:folder)) }
+        catch {
+            let alert = NSAlert(); alert.messageText = status; alert.informativeText = error.localizedDescription; alert.runModal()
+        }
+    }
+    func export(to folder: URL) throws -> [URL] {
+        guard !isProcessing else { throw CocoaError(.userCancelled) }
         var saved: [URL] = []
         do {
             for file in ready {
@@ -460,12 +467,13 @@ final class Model: ObservableObject {
                 if let i = files.firstIndex(where: { $0.id == file.id }) { files[i].outputName = destination.lastPathComponent }
             }
             status = "Saved \(saved.count) clean files to \(folder.lastPathComponent)"
-            NSWorkspace.shared.activateFileViewerSelecting(saved)
+            return saved
         } catch {
             status = "Saved \(saved.count) files before an error"
-            let alert = NSAlert(); alert.messageText = status; alert.informativeText = error.localizedDescription; alert.runModal()
+            throw error
         }
     }
+
 }
 
 struct DiffInfo {

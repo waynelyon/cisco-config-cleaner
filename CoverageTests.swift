@@ -7,6 +7,21 @@ func expectSecret(_ source: String, _ expected: String) {
 }
 
 func runCoverageTests() {
+    let exportFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try! FileManager.default.createDirectory(at:exportFolder,withIntermediateDirectories:true)
+    defer { try? FileManager.default.removeItem(at:exportFolder) }
+    let originalURL = exportFolder.appendingPathComponent("router.cfg")
+    try! Data("password 0 DEMO".utf8).write(to:originalURL)
+    let exportModel = Model(); exportModel.add([originalURL])
+    let firstExport = try! exportModel.export(to:exportFolder)
+    let secondExport = try! exportModel.export(to:exportFolder)
+    assert(firstExport[0].lastPathComponent == "router-clean.cfg" && secondExport[0].lastPathComponent == "router-2-clean.cfg")
+    assert((try! String(contentsOf:originalURL,encoding:.utf8)) == "password 0 DEMO")
+    assert(!(try! String(contentsOf:firstExport[0],encoding:.utf8)).contains("DEMO"))
+    exportModel.files = [ConfigFile(url:originalURL,cleaned:"safe",outputName:"partial-clean.cfg"),ConfigFile(url:originalURL,cleaned:"safe",outputName:String(repeating:"x",count:300))]
+    assert((try? exportModel.export(to:exportFolder)) == nil)
+    assert(exportModel.status == "Saved 1 files before an error")
+    assert(FileManager.default.fileExists(atPath:exportFolder.appendingPathComponent("partial-clean.cfg").path))
     let longPreview = DiffInfo(String(repeating:"é",count:200_001),"")
     assert(longPreview.truncated && longPreview.original[0].count == 200_000)
     let manyLines = DiffInfo(String(repeating:"line\n",count:10_000),"")
