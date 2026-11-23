@@ -882,7 +882,8 @@ if CommandLine.arguments.contains("--version") {
     assert(output.contains("neighbor " + c.ips["10.0.0.1"]!))
     assert(Cleaner().clean(input,hostname:false,addresses:false,secrets:false) == input)
     assert(cleanName(URL(fileURLWithPath:"/tmp/router.cfg")) == "router-clean.cfg")
-    assert(c.counts == [1, 4, 3, 0], "Replacement counts must reflect actual substitutions")
+    assert(output.contains("255.255.255.0"), "Label mode preserves recognized masks")
+    assert(c.counts == [1, 3, 3, 0], "Replacement counts must reflect actual substitutions")
     let cases: [(String,String)] = [
         ("username admin privilege 15 secret 9 HASH", "username admin privilege 15 secret 9 [REDACTED]"),
         (" enable password level 15 7 HASH", " enable password level 15 7 [REDACTED]"),
