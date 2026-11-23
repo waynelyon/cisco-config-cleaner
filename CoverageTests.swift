@@ -7,6 +7,10 @@ func expectSecret(_ source: String, _ expected: String) {
 }
 
 func runCoverageTests() {
+    expectSecret(#"password 0 "alpha\"bravo""#, "password 0 [REDACTED]")
+    expectSecret(#"password 0 "unterminated two words"#, "password 0 [REDACTED]")
+    expectSecret(#"password 0 'alpha\'bravo'"#, "password 0 [REDACTED]")
+    expectSecret(#"password 0 "alpha beta\"#, "password 0 [REDACTED]")
     expectSecret("password strengthSecret", "password [REDACTED]")
     expectSecret("password policySecret", "password [REDACTED]")
     expectSecret("password strength", "password [REDACTED]")

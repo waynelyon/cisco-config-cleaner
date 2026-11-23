@@ -44,7 +44,7 @@ final class Cleaner {
         if trimmed.hasPrefix("!") || trimmed.hasPrefix("#") || trimmed.lowercased().hasPrefix("description ") || trimmed.lowercased().hasPrefix("no ") { return line }
         if trimmed.range(of: #"(?i)^password\h+encryption\h+aes\h*$"#, options:.regularExpression) != nil { return line }
         if trimmed.range(of: #"(?i)^(?:password\h+(?:strength|policy|minimum-length|min-length)\h+|key chain |authentication (?:key-chain|mode) )"#, options:.regularExpression) != nil { return line }
-        let token = #"(?:"[^"\r\n]*"|'[^'\r\n]*'|[^ \t\r\n]+)"#
+        let token = #"(?:"(?:\\[^\r\n]|[^"\\\r\n])*(?:"|\\?(?=\r?$))|'(?:\\[^\r\n]|[^'\\\r\n])*(?:'|\\?(?=\r?$))|[^ \t\r\n]+)"#
         let value = "(?<value>" + token + ")"
         var result = line
         // Commands with extra fields before the value must be handled before generic keywords.
