@@ -7,6 +7,11 @@ func expectSecret(_ source: String, _ expected: String) {
 }
 
 func runCoverageTests() {
+    let longPreview = DiffInfo(String(repeating:"é",count:200_001),"")
+    assert(longPreview.truncated && longPreview.original[0].count == 200_000)
+    let manyLines = DiffInfo(String(repeating:"line\n",count:10_000),"")
+    assert(manyLines.truncated && manyLines.original.count == 2000)
+    assert(DiffInfo("one\rtwo", "one\r\ntwo").original == ["one","two"])
     let background = Model(backgroundCleaning:true)
     background.files = [ConfigFile(url:URL(fileURLWithPath:"/tmp/background.cfg"),original:"hostname edge\npassword 0 DEMO",outputName:"")]
     background.files[0].cleaned = "password 0 DEMO"

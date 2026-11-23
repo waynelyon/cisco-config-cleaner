@@ -476,11 +476,14 @@ struct DiffInfo {
     let truncated: Bool
     init(_ before: String, _ after: String) {
         // Bound diff work; exported files always contain the full output.
-        let a = before.components(separatedBy:"\n")
-        let b = after.components(separatedBy:"\n")
-        truncated = a.count > 2000 || b.count > 2000 || before.utf8.count > 200_000 || after.utf8.count > 200_000
-        original = Array(String(before.prefix(200_000)).components(separatedBy:"\n").prefix(2000))
-        cleaned = Array(String(after.prefix(200_000)).components(separatedBy:"\n").prefix(2000))
+        func preview(_ text: String) -> ([String],Bool) {
+            let prefix = String(text.prefix(200_001))
+            let normalized = String(prefix.prefix(200_000)).replacingOccurrences(of:"\r\n",with:"\n").replacingOccurrences(of:"\r",with:"\n")
+            let lines = normalized.split(separator:"\n",maxSplits:2000,omittingEmptySubsequences:false)
+            return (lines.prefix(2000).map(String.init), prefix.count > 200_000 || lines.count > 2000)
+        }
+        let a = preview(before), b = preview(after)
+        original = a.0; cleaned = b.0; truncated = a.1 || b.1
         for change in cleaned.difference(from:original) {
             switch change {
             case .remove(let offset, _, _): removed.insert(offset)
