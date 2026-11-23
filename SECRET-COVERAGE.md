@@ -10,7 +10,7 @@ Non-secret controls explicitly preserved include password encryption aes, key-ch
 
 All five additional options default on and can be disabled separately: banner removal, location/contact removal, domain-name redaction, description redaction, and serial-number redaction. Serial detection uses explicit license UDI, SN:, serial-number, system/chassis serial number and processor board ID fields. It also redacts repeated instances of discovered serials in that file, without changing product IDs or Serial interface names. Unlabeled serial values cannot reliably be identified by this rule.
 
-The metadata options do not affect the three hostname/IP/credential counters. Test cases verify option independence and byte-for-byte command preservation, including negative cases and repeated cleaning.
+Metadata changes have a separate counter included in per-file and batch totals. Removed banner/location lines and redacted metadata values each count as a change. Test cases verify option independence and byte-for-byte command preservation, including negative cases and repeated cleaning.
 
 ## Cisco references reviewed
 

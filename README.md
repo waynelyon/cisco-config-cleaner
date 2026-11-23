@@ -2,6 +2,14 @@
 
 Native macOS utility for reviewing and anonymizing batches of Cisco configuration files. Processing stays on your Mac.
 
+## Download and install
+
+Download the app ZIP from the [latest GitHub release](https://github.com/waynelyon/cisco-config-cleaner/releases/latest), unzip it, and drag **Cisco Config Cleaner.app** into **Applications**.
+
+The release is universal (Apple Silicon and Intel) and targets macOS 14 or later. It is locally ad-hoc signed, not Apple Developer ID signed or notarized. macOS may block the downloaded app; after attempting to open it, use **System Settings → Privacy & Security → Open Anyway** if you trust this release. Do not disable Gatekeeper globally. A SHA-256 checksum is included with the release.
+
+Maintainers can build a universal release ZIP with `zsh release.sh`. Release builds run regression checks on the host architecture. Cross-compilation does not replace testing on Intel hardware or older macOS versions.
+
 ## Build from source
 
 Requires macOS with Xcode or the Xcode command-line tools installed and a Swift toolchain that supports the SwiftUI APIs used here.
@@ -19,7 +27,7 @@ Open `Cisco Config Cleaner.app`. Drop text configuration files into the window o
 
 `router.cfg` becomes `router-clean.cfg`. Existing files are never overwritten; conflicts become `router-2-clean.cfg`. Originals are unchanged. Processing happens locally, without network calls, logging, or saved replacement maps.
 
-Hostnames declared with `hostname` or `switchname` and their references receive consistent aliases across the batch. IP cleaning defaults to a logical address scheme; labels remain available from the Mode picker. Turn IP cleaning off to retain original addressing. Logical mode preserves recognized subnet and wildcard masks and prefixes, while adding `*` before changed addresses. Credential values are replaced with `[REDACTED]`, preserving command prefixes, encryption type markers, and supported trailing options. Common password, secret, SNMP, TACACS/RADIUS key, pre-shared key, certificate, and PEM private key formats are covered.
+Hostnames declared with `hostname` or `switchname` receive consistent aliases across the batch. Known value positions in `logging host`, `ntp server/peer`, `snmp-server host`, and `neighbor` references are also replaced. Other references require manual review; command keywords are never globally substituted. IP cleaning defaults to a logical address scheme; labels remain available from the Mode picker. Turn IP cleaning off to retain original addressing. Logical mode preserves recognized subnet and wildcard masks and prefixes, while adding `*` before changed addresses. Credential values are replaced with `[REDACTED]`, preserving command prefixes, encryption type markers, and supported trailing options. Common password, secret, SNMP, TACACS/RADIUS key, pre-shared key, certificate, and PEM private key formats are covered.
 
 Review before sharing: this is a rules-based sanitizer, not a guarantee of complete anonymization. Unusual Cisco syntax, usernames, domain names, descriptions, serial numbers, MAC addresses, or embedded scripts can retain sensitive content. Text files up to 20 MB each are supported. The app is locally compiled, not notarized for distribution.
 
@@ -52,7 +60,7 @@ Checks cover IPv4 prefix sizes /8–/32, subnet membership and host-bit preserva
 
 ## Identity metadata and SNMP handling
 
-App cleaning always removes delimiter-based banner blocks, SNMP location/contact/chassis-id lines, and standalone location metadata. It redacts values in `ip domain name`, `ip domain-name`, domain lists, `domain-name`, descriptions, and SNMP name/sysname commands. This metadata cleanup is independent of the credential checkbox; the three replacement counters do not include metadata removal. Unknown identifying fields and free-form comments still require review.
+When enabled, metadata cleaning removes delimiter-based banner blocks, SNMP location/contact/chassis-id lines, and standalone location metadata. It redacts values in `ip domain name`, `ip domain-name`, domain lists, `domain-name`, descriptions, and SNMP name/sysname commands. This metadata cleanup is independent of the credential checkbox; metadata changes are included in the totals (removed lines and redacted values). Unknown identifying fields and free-form comments still require review.
 
 `password encryption aes` is an encryption setting and remains unchanged. SNMP host community strings are redacted both with explicit version 1/2c and with implicit v1 (no version clause), retaining the host command and trailing options. Version 3 usernames are not treated as community strings.
 
@@ -75,3 +83,9 @@ The file picker remembers the parent folder of the last confirmed file selection
 ## Version 1.2.3 (build 6)
 
 Reset to Defaults appears at the top of the cleaning-options panel. It enables all cleaning checkboxes, selects logical IP mapping, persists those defaults, and refreshes the current previews. It preserves the file queue, selected file, and remembered input/output folders.
+
+## Version 27.0.0 (build 7)
+
+Fixes credential leakage caused by hostname/command keyword collisions, including cross-file batches. Hostname replacement now targets known value positions rather than rewriting arbitrary words. Numeric standalone keys are redacted unless they are indented entries in a recognized key-chain block; include the block header when cleaning fragments to preserve key IDs. Metadata redactions and removed lines now contribute to per-file totals and have their own batch counter.
+
+Regression coverage includes keyword hostnames, alias collisions, VRF references, numeric RADIUS/TACACS keys, retained key-chain IDs, CRLF input, banners containing credential-like text, and metadata-only totals. Unknown hostname references and unusual Cisco syntax still need review.

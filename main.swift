@@ -3,8 +3,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 // Compiled into the executable so an already-running older process cannot report a newly installed version.
-let appVersion = "1.2.3"
-let appBuild = "6"
+let appVersion = "27.0.0"
+let appBuild = "7"
 let appVersionLabel = "v\(appVersion) (build \(appBuild))"
 
 func replace(_ text: String, _ pattern: String, _ transform: (String) -> String) -> String {
@@ -16,7 +16,7 @@ func replace(_ text: String, _ pattern: String, _ transform: (String) -> String)
     return result
 }
 final class Cleaner {
-    var counts = [0, 0, 0]
+    var counts = [0, 0, 0, 0]
     var category = 0
     func tracked(_ text: String, _ pattern: String, _ transform: (String) -> String) -> String {
         replace(text, pattern) { value in
@@ -38,9 +38,9 @@ final class Cleaner {
         }
         return result
     }
-    func redactCredentialLine(_ line: String) -> String {
+    func redactCredentialLine(_ line: String, keyChainID: Bool = false) -> String {
         // Ignore comments/descriptions and negative commands, which contain no configured secret.
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasPrefix("!") || trimmed.hasPrefix("#") || trimmed.lowercased().hasPrefix("description ") || trimmed.lowercased().hasPrefix("no ") { return line }
         if trimmed.range(of: #"(?i)^password\h+encryption\h+aes\h*$"#, options:.regularExpression) != nil { return line }
         if trimmed.range(of: #"(?i)^(?:password (?:strength|policy|minimum-length|min-length)|key chain |authentication (?:key-chain|mode) )"#, options:.regularExpression) != nil { return line }
@@ -81,8 +81,8 @@ final class Cleaner {
             #"(?i)\b(?:https?|ftp)://[^\s/:@]+:(?<value>[^\s/@]+)@"#
         ]
         for pattern in patterns {
-            // Numeric-only key commands are identifiers, not passwords.
-            if pattern.hasPrefix(#"(?i)^\h*key"#), trimmed.range(of: #"(?i)^key\h+\d+$"#, options:.regularExpression) != nil { continue }
+            // Only numeric keys in a known key-chain block are identifiers.
+            if keyChainID, pattern.hasPrefix(#"(?i)^\h*key"#), trimmed.range(of: #"(?i)^key\h+\d+$"#, options:.regularExpression) != nil { continue }
             result = redactValues(result, pattern)
         }
         if trimmed.range(of: #"(?i)^snmp-server\h+host\h+"#, options:.regularExpression) != nil {
@@ -100,11 +100,13 @@ final class Cleaner {
         var delimiter: String?
         for line in lines {
             if let end = delimiter {
+                counts[3] += 1
                 if line.contains(end) { delimiter = nil }
                 continue
             }
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             if options.banners, let range = trimmed.range(of: #"(?i)^banner\h+\S+\h+"#, options:.regularExpression) {
+                counts[3] += 1
                 let payload = String(trimmed[range.upperBound...])
                 if !payload.isEmpty {
                     let end = payload.hasPrefix("^") && payload.count >= 2 ? String(payload.prefix(2)) : String(payload.prefix(1))
@@ -112,7 +114,7 @@ final class Cleaner {
                 }
                 continue
             }
-            if options.location, trimmed.range(of: #"(?i)^(?:snmp-server\h+(?:location|contact|chassis-id)|location|system\h+location)\b"#,options:.regularExpression) != nil { continue }
+            if options.location, trimmed.range(of: #"(?i)^(?:snmp-server\h+(?:location|contact|chassis-id)|location|system\h+location)\b"#,options:.regularExpression) != nil { counts[3] += 1; continue }
             var commands: [String] = []
             if options.domains { commands += [#"ip\h+domain(?:-|\h+)(?:name|list)(?:\h+vrf\h+\S+)?"#, "domain-name"] }
             if options.descriptions { commands += ["description"] }
@@ -121,7 +123,7 @@ final class Cleaner {
             if !commands.isEmpty {
                 let regex = try! NSRegularExpression(pattern: #"(?i)^(\h*(?:"# + commands.joined(separator:"|") + #")\h+)([^\r\n]+)"#)
                 if let match = regex.firstMatch(in:line,range:NSRange(line.startIndex...,in:line)), let r = Range(match.range(at:2),in:line) {
-                    cleaned.replaceSubrange(r,with:"[REDACTED]")
+                    if line[r] != "[REDACTED]" { counts[3] += 1; cleaned.replaceSubrange(r,with:"[REDACTED]") }
                 }
             }
             output.append(cleaned)
@@ -134,7 +136,7 @@ final class Cleaner {
             let ns = result as NSString
             let serials = Set(regex.matches(in:result,range:NSRange(location:0,length:ns.length)).map { ns.substring(with:$0.range(withName:"serial")) })
             for serial in serials.sorted(by: { $0.count > $1.count }) {
-                result = replace(result, #"(?<![A-Za-z0-9._/-])"# + NSRegularExpression.escapedPattern(for:serial) + #"(?![A-Za-z0-9._/-])"#) { _ in "[REDACTED]" }
+                result = replace(result, #"(?<![A-Za-z0-9._/-])"# + NSRegularExpression.escapedPattern(for:serial) + #"(?![A-Za-z0-9._/-])"#) { _ in self.counts[3] += 1; return "[REDACTED]" }
             }
         }
         return result
@@ -144,25 +146,59 @@ final class Cleaner {
         if host { if hosts[value] == nil { hosts[value] = "DEVICE_\(hosts.count + 1)" }; return hosts[value]! }
         if ips[value] == nil { ips[value] = "IP_\(ips.count + 1)" }; return ips[value]!
     }
+    func discoverHosts(_ input: String) {
+        let regex = try! NSRegularExpression(pattern: #"(?im)^\h*(?:hostname|switchname)\h+(\S+)"#)
+        for match in regex.matches(in:input,range:NSRange(input.startIndex...,in:input)) {
+            if let range = Range(match.range(at:1),in:input) { _ = alias(String(input[range]),host:true) }
+        }
+    }
+    let hostnameValuePattern = #"(?im)^(\h*(?:hostname|switchname|logging\h+host|ntp\h+(?:server|peer)|snmp-server\h+host|neighbor)\h+(?:vrf\h+\S+\h+)?)(\S+)"#
     func clean(_ input: String, hostname: Bool, addresses: Bool, secrets: Bool, scheme: AddressScheme? = nil, marked: Bool = false, identity: Bool = false, identityOptions: IdentityOptions? = nil) -> String {
-        counts = [0, 0, 0]
+        counts = [0, 0, 0, 0]
         category = 0
-        var text = identityOptions.map { stripIdentity(input,options:$0) } ?? (identity ? stripIdentity(input) : input)
-        if hostname {
-            let re = try! NSRegularExpression(pattern: "(?im)^\\s*(?:hostname|switchname)\\s+(\\S+)")
-            for m in re.matches(in: input, range: NSRange(input.startIndex..., in: input)) {
-                if let r = Range(m.range(at: 1), in: input) { _ = alias(String(input[r]), host: true) }
-            }
-            for name in hosts.keys.sorted(by: { $0.count > $1.count }) {
-                text = tracked(text, "(?<![A-Za-z0-9_-])" + NSRegularExpression.escapedPattern(for: name) + "(?![A-Za-z0-9_-])") { _ in self.hosts[name]! }
-            }
+        var text = input
+        // Remove banners before parsing commands so their arbitrary payload cannot alter parsing.
+        let metadataOptions = identityOptions ?? (identity ? IdentityOptions() : .none)
+        if metadataOptions.banners {
+            var bannersOnly = IdentityOptions.none; bannersOnly.banners = true
+            text = stripIdentity(text, options:bannersOnly)
         }
         category = 2
         if secrets {
+            // Hide hostname values from keyword-based secret rules, then restore them exactly.
+            let hostRegex = try! NSRegularExpression(pattern:hostnameValuePattern)
+            var protectedHosts: [String:String] = [:]
+            for match in hostRegex.matches(in:text,range:NSRange(text.startIndex...,in:text)).reversed() {
+                guard let range = Range(match.range(at:2),in:text) else { continue }
+                let token = "HOSTVALUE" + UUID().uuidString.replacingOccurrences(of:"-",with:"")
+                protectedHosts[token] = String(text[range])
+                text.replaceSubrange(range,with:token)
+            }
             // Keep multiline block headers/terminators while removing their payloads.
             text = redactValues(text, #"(?ms)^\h*-----BEGIN [^\r\n]*PRIVATE KEY-----\r?\n(?<value>.*?)\r?\n\h*-----END [^\r\n]*PRIVATE KEY-----"#)
             text = redactValues(text, #"(?ims)^\h*certificate(?: ca| self-signed)?(?: [^\r\n]+)?\r?\n(?<value>.*?)\r?\n\h*quit\h*$"#)
-            text = text.components(separatedBy: "\n").map { redactCredentialLine($0) }.joined(separator: "\n")
+            var chainIndent: Int?
+            text = text.components(separatedBy: "\n").map { line in
+                let command = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                let indent = line.prefix { $0 == " " || $0 == "\t" }.count
+                if command == "!" || command.lowercased() == "end" { chainIndent = nil }
+                if let depth = chainIndent, !command.isEmpty, !command.hasPrefix("!"), indent <= depth { chainIndent = nil }
+                if command.range(of: #"(?i)^key\h+chain\h+\S+\h*$"#, options:.regularExpression) != nil { chainIndent = indent }
+                return redactCredentialLine(line, keyChainID: chainIndent.map { indent > $0 } ?? false)
+            }.joined(separator: "\n")
+            for (token, value) in protectedHosts { text = text.replacingOccurrences(of:token,with:value) }
+        }
+        if let options = identityOptions { text = stripIdentity(text, options:options) }
+        else if identity { text = stripIdentity(text) }
+        category = 0
+        if hostname {
+            discoverHosts(input)
+            // Replace only known hostname value positions; never command keywords or generated aliases.
+            let regex = try! NSRegularExpression(pattern:hostnameValuePattern)
+            for match in regex.matches(in:text,range:NSRange(text.startIndex...,in:text)).reversed() {
+                guard let range = Range(match.range(at:2),in:text), let replacement = hosts[String(text[range])] else { continue }
+                if text[range] != replacement { text.replaceSubrange(range,with:replacement); counts[0] += 1 }
+            }
         }
         category = 1
         if addresses, let scheme = scheme {
@@ -190,7 +226,7 @@ struct ConfigFile: Identifiable {
     var original = ""
     var cleaned = ""
     var error: String?
-    var counts = [0, 0, 0]
+    var counts = [0, 0, 0, 0]
     var outputName: String
     var total: Int { counts.reduce(0,+) }
 }
@@ -249,7 +285,7 @@ final class Model: ObservableObject {
         defaults?.set(folder.standardizedFileURL.path,forKey:"folders." + purpose.rawValue)
     }
     var ready: [ConfigFile] { files.filter { $0.error == nil } }
-    var totals: [Int] { (0..<3).map { index in ready.reduce(0) { $0 + $1.counts[index] } } }
+    var totals: [Int] { (0..<4).map { index in ready.reduce(0) { $0 + $1.counts[index] } } }
     func add(_ urls: [URL]) {
         for url in urls where url.isFileURL && !files.contains(where: { $0.url == url }) {
             var file = ConfigFile(url:url,outputName:cleanName(url))
@@ -269,7 +305,7 @@ final class Model: ObservableObject {
         let cleaner = Cleaner()
         let scheme = ip && schemeMode ? AddressScheme(ready.map { $0.original }) : nil
         mappingNote = scheme?.warning ?? ""
-        if host { for file in ready { _ = cleaner.clean(file.original,hostname:true,addresses:false,secrets:false) } }
+        if host { for file in ready { cleaner.discoverHosts(file.original) } }
         var names = Set<String>()
         for index in files.indices {
             guard files[index].error == nil else { continue }
@@ -553,7 +589,7 @@ struct ContentView: View {
             HStack(alignment:.center,spacing:24) {
                 VStack(alignment:.leading,spacing:4) {
                     Text("Export summary · \(model.ready.count) files").font(.system(size:13,weight:.medium))
-                    Text("\(model.totals[0]) hostname · \(model.totals[1]) IP · \(model.totals[2]) credential replacements").font(.system(size:12,design:.monospaced)).foregroundColor(.secondary)
+                    Text("\(model.totals[0]) hostname · \(model.totals[1]) IP · \(model.totals[2]) credential · \(model.totals[3]) metadata changes").font(.system(size:12,design:.monospaced)).foregroundColor(.secondary)
                 }
                 Spacer(minLength:0)
                 Button("Save clean files…") { model.save() }.buttonStyle(.borderedProminent).controlSize(.large).disabled(model.ready.isEmpty).keyboardShortcut("s",modifiers:.command)
@@ -590,7 +626,7 @@ if CommandLine.arguments.contains("--self-test") {
     assert(output.contains("neighbor " + c.ips["10.0.0.1"]!))
     assert(Cleaner().clean(input,hostname:false,addresses:false,secrets:false) == input)
     assert(cleanName(URL(fileURLWithPath:"/tmp/router.cfg")) == "router-clean.cfg")
-    assert(c.counts == [1, 4, 3], "Replacement counts must reflect actual substitutions")
+    assert(c.counts == [1, 4, 3, 0], "Replacement counts must reflect actual substitutions")
     let cases: [(String,String)] = [
         ("username admin privilege 15 secret 9 HASH", "username admin privilege 15 secret 9 [REDACTED]"),
         (" enable password level 15 7 HASH", " enable password level 15 7 [REDACTED]"),
@@ -600,7 +636,7 @@ if CommandLine.arguments.contains("--self-test") {
         ("neighbor 192.0.2.1 password 7 HASH", "neighbor 192.0.2.1 password 7 [REDACTED]"),
         ("tacacs-server key 7 HASH", "tacacs-server key 7 [REDACTED]"),
         (" key 7 HASH", " key 7 [REDACTED]"),
-        (" key 123", " key 123"),
+        (" key 123", " key [REDACTED]"),
         ("snmp-server user admin group v3 auth sha AUTHVALUE priv aes 128 PRIVVALUE", "snmp-server user admin group v3 auth sha [REDACTED] priv aes 128 [REDACTED]"),
         ("snmp-server host 192.0.2.1 version 2c PRIVATE", "snmp-server host 192.0.2.1 version 2c [REDACTED]"),
         ("username admin password HASH encrypted privilege 15", "username admin password [REDACTED] encrypted privilege 15"),
@@ -615,7 +651,7 @@ if CommandLine.arguments.contains("--self-test") {
         let actual = cleaner.clean(source,hostname:false,addresses:false,secrets:true)
         assert(actual == expected, "Credential syntax preservation failed: \(source) => \(actual)")
         assert(cleaner.clean(actual,hostname:false,addresses:false,secrets:true) == actual)
-        assert(cleaner.counts == [0,0,0], "Redacting an already cleaned config must be idempotent")
+        assert(cleaner.counts == [0,0,0,0], "Redacting an already cleaned config must be idempotent")
     }
     let diff = DiffInfo("one\ntwo\nthree", "one\nREPLACED\nthree")
     assert(diff.removed == Set([1]) && diff.inserted == Set([1]))
@@ -627,9 +663,9 @@ if CommandLine.arguments.contains("--self-test") {
     model.files = [ConfigFile(url: URL(fileURLWithPath:"/a/router.cfg"), original:"hostname first",outputName:""), ConfigFile(url: URL(fileURLWithPath:"/b/router.cfg"), original:"hostname second",outputName:"")]
     model.refresh()
     assert(model.files.map { $0.outputName } == ["router-clean.cfg", "router-2-clean.cfg"])
-    assert(model.totals == [2,0,0])
+    assert(model.totals == [2,0,0,0])
     model.host = false; model.refresh()
-    assert(model.totals == [0,0,0] && model.files[0].cleaned == "hostname first")
+    assert(model.totals == [0,0,0,0] && model.files[0].cleaned == "hostname first")
     model.selected = model.files[0].id; model.remove(model.files[0].id)
     assert(model.selected == model.files.first?.id && model.files.count == 1)
     let identitySource = "password encryption aes\nip domain name example.internal\nip domain-name example.internal\nsnmp-server location Some street, City\nsnmp-server contact Test Person\n description Building uplink\nbanner motd ^C\nPrivate organization\nOffice address\n^C\ninterface Vlan10\nbanner login #Private message#\nend\n"
@@ -661,7 +697,7 @@ if CommandLine.arguments.contains("--self-test") {
         assert(cleaner.clean(source,hostname:false,addresses:false,secrets:true) == expected)
         assert(cleaner.clean(expected,hostname:false,addresses:false,secrets:true) == expected)
     }
-    assert(appVersionLabel == "v1.2.3 (build 6)")
+    assert(appVersionLabel == "v27.0.0 (build 7)")
     let suite = "local.cisco.configcleaner.tests." + UUID().uuidString
     let store = UserDefaults(suiteName:suite)!
     let firstLaunch = Model(defaults:store)

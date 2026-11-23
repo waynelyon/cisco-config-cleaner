@@ -32,10 +32,10 @@ func runCoverageTests() {
         let actual = c.clean(source,hostname:false,addresses:false,secrets:true)
         assert(actual == expected, "Incorrect credential handling: \(source) => \(actual)")
         assert(c.clean(actual,hostname:false,addresses:false,secrets:true) == actual)
-        assert(c.counts == [0,0,0])
+        assert(c.counts == [0,0,0,0])
         assert(c.clean(source,hostname:false,addresses:false,secrets:false) == source)
     }
-    let intact = ["password encryption aes", "key chain ROUTING_KEYS", " key 42", "standby 1 authentication md5 key-chain HSRP_KEYS", "ip ospf authentication key-chain OSPF_KEYS", "password strength minimum 12", "crypto isakmp client configuration group VPN_USERS", "no enable password", "interface Serial0/0/0"]
+    let intact = ["password encryption aes", "key chain ROUTING_KEYS", "standby 1 authentication md5 key-chain HSRP_KEYS", "ip ospf authentication key-chain OSPF_KEYS", "password strength minimum 12", "crypto isakmp client configuration group VPN_USERS", "no enable password", "interface Serial0/0/0"]
     for line in intact { assert(Cleaner().clean(line,hostname:false,addresses:false,secrets:true) == line, "Changed non-secret command: \(line)") }
     let sample = "banner motd #private banner#\nsnmp-server location Test office\nip domain name example.test\n description Test uplink\nlicense udi pid C8000 sn FOC12345678\ninterface Serial0/0/0\n"
     let cleaner = Cleaner()
@@ -63,5 +63,53 @@ func runCoverageTests() {
     model.refresh(); assert(model.files[0].cleaned == sample)
     model.identityOptions = IdentityOptions(); model.refresh()
     assert(!model.files[0].cleaned.contains("FOC12345678") && !model.files[0].cleaned.contains("private banner"))
+    // Exercise the export boundary with names that used to rewrite credential grammar.
+    for keyword in ["password", "secret", "key", "encryption"] {
+        let model = Model()
+        model.files = [
+            ConfigFile(url:URL(fileURLWithPath:"/tmp/name.cfg"),original:"hostname \(keyword)\nusername admin password 0 SAME_FILE_SECRET\npassword encryption aes",outputName:""),
+            ConfigFile(url:URL(fileURLWithPath:"/tmp/credentials.cfg"),original:"username admin secret 9 CROSS_FILE_SECRET\nlogging host \(keyword)",outputName:"")
+        ]
+        model.refresh()
+        assert(model.files[0].cleaned.contains("username admin password 0 [REDACTED]"))
+        assert(model.files[0].cleaned.contains("password encryption aes"))
+        assert(model.files[1].cleaned.contains("username admin secret 9 [REDACTED]"))
+        assert(model.files[1].cleaned.contains("logging host DEVICE_1"))
+        for file in model.files { assert(!model.exportText(file).contains("FILE_SECRET")) }
+        model.secret = false; model.refresh()
+        assert(model.files[0].cleaned.contains("username admin password 0 SAME_FILE_SECRET"))
+    }
+    let aliases = Cleaner()
+    aliases.discoverHosts("hostname long-router-name\nhostname DEVICE_1")
+    assert(aliases.clean("hostname long-router-name\nhostname DEVICE_1",hostname:true,addresses:false,secrets:false) == "hostname DEVICE_1\nhostname DEVICE_2")
+    for replaceHost in [true, false] {
+        let name = replaceHost ? "DEVICE_1" : "password"
+        let actual = Cleaner().clean("hostname password\nlogging host password transport tcp port 514\nntp server password prefer\nneighbor password password 7 DEMO_SECRET",hostname:replaceHost,addresses:false,secrets:true)
+        assert(actual == "hostname \(name)\nlogging host \(name) transport tcp port 514\nntp server \(name) prefer\nneighbor \(name) password 7 [REDACTED]")
+    }
+    let vrfHosts = Cleaner().clean("hostname edge\nntp server vrf Mgmt edge\nsnmp-server host vrf Mgmt edge version 2c COMMUNITY",hostname:true,addresses:false,secrets:true)
+    assert(vrfHosts == "hostname DEVICE_1\nntp server vrf Mgmt DEVICE_1\nsnmp-server host vrf Mgmt DEVICE_1 version 2c [REDACTED]")
+    let bannerCommands = Cleaner().clean("banner motd #password 0 payload#\nhostname edge",hostname:true,addresses:false,secrets:true,identityOptions:IdentityOptions())
+    assert(bannerCommands == "hostname DEVICE_1")
+    let serverKeys = "radius server R1\n address ipv4 192.0.2.1\n key 123456789\n!\ntacacs server T1\n key 987654321\n!\nkey chain ROUTING\n key 42\n  key-string 0 ROUTING_SECRET\n!\nradius server R2\n key 0 123456789\n"
+    let keys = Cleaner().clean(serverKeys,hostname:false,addresses:false,secrets:true)
+    assert(!keys.contains("123456789") && !keys.contains("987654321") && !keys.contains("ROUTING_SECRET"))
+    assert(keys.contains("key chain ROUTING\n key 42\n  key-string 0 [REDACTED]"))
+    assert(keys.contains(" key 0 [REDACTED]"))
+    assert(Cleaner().clean(serverKeys.replacingOccurrences(of:"\n",with:"\r\n"),hostname:false,addresses:false,secrets:true) == keys.replacingOccurrences(of:"\n",with:"\r\n"))
+    assert(Cleaner().clean(keys,hostname:false,addresses:false,secrets:true) == keys)
+    let noSeparator = "key chain ROUTING\n key 42\nradius server R1\n key 123456789"
+    assert(Cleaner().clean(noSeparator,hostname:false,addresses:false,secrets:true).hasSuffix(" key [REDACTED]"))
+    let metadata = Model(); metadata.host = false; metadata.ip = false; metadata.secret = false
+    metadata.files = [ConfigFile(url:URL(fileURLWithPath:"/tmp/metadata.cfg"),original:sample,outputName:"")]
+    metadata.refresh()
+    assert(metadata.files[0].counts == [0,0,0,5] && metadata.files[0].total == 5 && metadata.totals[3] == 5)
+    let secondPass = Cleaner()
+    _ = secondPass.clean(metadata.files[0].cleaned,hostname:false,addresses:false,secrets:false,identityOptions:IdentityOptions())
+    assert(secondPass.counts == [0,0,0,0])
+    let multilineBanner = Cleaner()
+    _ = multilineBanner.clean("banner motd ^C\nprivate\n^C",hostname:false,addresses:false,secrets:false,identityOptions:IdentityOptions())
+    assert(multilineBanner.counts[3] == 3)
+    print("Security regressions: cross-file keyword hostnames, alias collisions, numeric server keys, key-chain IDs, and metadata totals passed")
     print("Extended Cisco secret formats and independent metadata/serial options passed")
 }
