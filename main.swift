@@ -313,15 +313,25 @@ final class Model: ObservableObject {
     }
     var ready: [ConfigFile] { files.filter { $0.error == nil } }
     var totals: [Int] { (0..<4).map { index in ready.reduce(0) { $0 + $1.counts[index] } } }
+    static func readConfiguration(_ url: URL, limit: Int = 20_000_000) throws -> String {
+        let attrs = try url.resourceValues(forKeys:[.isRegularFileKey,.fileSizeKey])
+        guard attrs.isRegularFile == true, (attrs.fileSize ?? 0) <= limit else { throw CocoaError(.fileReadTooLarge) }
+        let handle = try FileHandle(forReadingFrom:url)
+        defer { try? handle.close() }
+        var data = Data()
+        while data.count <= limit {
+            guard let chunk = try handle.read(upToCount:min(65536,limit + 1 - data.count)), !chunk.isEmpty else { break }
+            data.append(chunk)
+        }
+        guard data.count <= limit else { throw CocoaError(.fileReadTooLarge) }
+        guard !data.contains(0), let text = String(data:data,encoding:.utf8) ?? String(data:data,encoding:.isoLatin1) else { throw CocoaError(.fileReadInapplicableStringEncoding) }
+        return text
+    }
     func add(_ urls: [URL]) {
         for url in urls where url.isFileURL && !files.contains(where: { $0.url == url }) {
             var file = ConfigFile(url:url,outputName:cleanName(url))
             do {
-                let attrs = try url.resourceValues(forKeys:[.isRegularFileKey,.fileSizeKey])
-                guard attrs.isRegularFile == true, (attrs.fileSize ?? 0) <= 20_000_000 else { throw NSError(domain:"Choose a text file under 20 MB",code:1) }
-                let data = try Data(contentsOf:url)
-                guard !data.contains(0), let text = String(data:data,encoding:.utf8) ?? String(data:data,encoding:.isoLatin1) else { throw NSError(domain:"Not a readable text configuration",code:1) }
-                file.original = text
+                file.original = try Self.readConfiguration(url)
             } catch { file.error = "Could not read this file. Select a text configuration under 20 MB." }
             files.append(file)
         }

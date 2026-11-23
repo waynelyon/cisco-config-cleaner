@@ -7,6 +7,13 @@ func expectSecret(_ source: String, _ expected: String) {
 }
 
 func runCoverageTests() {
+    let readURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at:readURL) }
+    try! Data("test".utf8).write(to:readURL)
+    assert((try? Model.readConfiguration(readURL,limit:4)) == "test")
+    assert((try? Model.readConfiguration(readURL,limit:3)) == nil)
+    try! Data([0,65]).write(to:readURL)
+    assert((try? Model.readConfiguration(readURL,limit:4)) == nil)
     let neighbors = Array(repeating:"neighbor password password 7 DEMO",count:500).joined(separator:"\n")
     let many = Cleaner()
     let manyOutput = many.clean(neighbors,hostname:false,addresses:false,secrets:true)
