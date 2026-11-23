@@ -261,22 +261,37 @@ final class Model: ObservableObject {
     @Published var files: [ConfigFile] = []
     @Published var selected: UUID?
     @Published var targeted = false
-    @Published var host = true { didSet { saveOptions() } }
-    @Published var ip = true { didSet { saveOptions() } }
-    @Published var schemeMode = true { didSet { saveOptions() } }
+    @Published var isProcessing = false
+    @Published var host = true { didSet { optionsChanged() } }
+    @Published var ip = true { didSet { optionsChanged() } }
+    @Published var schemeMode = true { didSet { optionsChanged() } }
     @Published var mappingNote = ""
-    @Published var secret = true { didSet { saveOptions() } }
-    @Published var identityOptions = IdentityOptions() { didSet { saveOptions() } }
+    @Published var secret = true { didSet { optionsChanged() } }
+    @Published var identityOptions = IdentityOptions() { didSet { optionsChanged() } }
     @Published var status = "Files stay on this Mac"
     private let defaults: UserDefaults?
     private let maximumBatchBytes: Int
     private let maximumFiles: Int
     private var restoringOptions = true
+    private let backgroundCleaning: Bool
+    private var generation = 0
+    private var importNotice = ""
+    private let cleaningQueue: OperationQueue = {
+        let queue = OperationQueue(); queue.maxConcurrentOperationCount = 1
+        queue.qualityOfService = .userInitiated
+        return queue
+    }()
+    deinit { cleaningQueue.cancelAllOperations() }
+    private func optionsChanged() {
+        guard !restoringOptions else { return }
+        saveOptions(); refresh()
+    }
     // Tests use an isolated store (or no store); only the app uses standard preferences.
-    init(defaults: UserDefaults? = nil, maximumBatchBytes: Int = 100_000_000, maximumFiles: Int = 500) {
+    init(defaults: UserDefaults? = nil, maximumBatchBytes: Int = 100_000_000, maximumFiles: Int = 500, backgroundCleaning: Bool = false) {
         self.defaults = defaults
         self.maximumBatchBytes = maximumBatchBytes
         self.maximumFiles = maximumFiles
+        self.backgroundCleaning = backgroundCleaning
         func option(_ key: String) -> Bool { defaults?.object(forKey:"cleaning." + key) as? Bool ?? true }
         host = option("hostnames")
         ip = option("addresses")
@@ -348,13 +363,15 @@ final class Model: ObservableObject {
             files.append(file)
         }
         if selected == nil { selected = files.first?.id }
+        importNotice = queueFull ? " • Queue limit reached; remaining files were not added" : ""
         refresh()
-        if queueFull { status += " • Queue limit reached; remaining files were not added" }
     }
-    func refresh() {
+    private static func cleanFiles(_ input: [ConfigFile], host: Bool, ip: Bool, schemeMode: Bool, secret: Bool, identityOptions: IdentityOptions) -> ([ConfigFile],String) {
+        var files = input
+        let ready = files.filter { $0.error == nil }
         let cleaner = Cleaner()
         let scheme = ip && schemeMode ? AddressScheme(ready.map { $0.original }) : nil
-        mappingNote = scheme?.warning ?? ""
+        let mappingNote = scheme?.warning ?? ""
         if host { for file in ready { cleaner.discoverHosts(file.original) } }
         var names = Set<String>()
         for index in files.indices {
@@ -368,7 +385,34 @@ final class Model: ObservableObject {
             }
             names.insert(name.lowercased()); files[index].outputName = name
         }
-        status = files.isEmpty ? "Files stay on this Mac" : "\(ready.count) ready • \(files.count - ready.count) unreadable"
+        return (files,mappingNote)
+    }
+    func refresh() {
+        generation += 1
+        cleaningQueue.cancelAllOperations()
+        let revision = generation, snapshot = files
+        let host = self.host, ip = self.ip, schemeMode = self.schemeMode, secret = self.secret, identityOptions = self.identityOptions
+        let apply: ([ConfigFile],String) -> Void = { [weak self] files, note in
+            guard let self = self, self.generation == revision else { return }
+            self.files = files; self.mappingNote = note; self.isProcessing = false
+            self.status = (files.isEmpty ? "Files stay on this Mac" : "\(self.ready.count) ready • \(files.count - self.ready.count) unreadable") + self.importNotice
+        }
+        guard backgroundCleaning && !files.isEmpty else {
+            let result = Self.cleanFiles(snapshot,host:host,ip:ip,schemeMode:schemeMode,secret:secret,identityOptions:identityOptions)
+            apply(result.0,result.1); return
+        }
+        isProcessing = true; status = "Cleaning configurations…"
+        for index in files.indices { files[index].cleaned = ""; files[index].counts = [0,0,0,0] }
+        let operation = BlockOperation()
+        operation.addExecutionBlock { [weak operation] in
+            guard let operation = operation, !operation.isCancelled else { return }
+            let result = Self.cleanFiles(snapshot,host:host,ip:ip,schemeMode:schemeMode,secret:secret,identityOptions:identityOptions)
+            DispatchQueue.main.async {
+                guard !operation.isCancelled else { return }
+                apply(result.0,result.1)
+            }
+        }
+        cleaningQueue.addOperation(operation)
     }
     func remove(_ id: UUID) {
         files.removeAll { $0.id == id }
@@ -397,6 +441,7 @@ final class Model: ObservableObject {
         ].joined(separator:newline) + newline + file.cleaned
     }
     func save() {
+        guard !isProcessing else { return }
         let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true; panel.prompt = "Save clean files"
         panel.message = "Save \(ready.count) clean copies. Existing files will not be overwritten."
         panel.directoryURL = rememberedFolder(.output)
@@ -542,7 +587,9 @@ struct ContentView: View {
                     Label("On-device only",systemImage:"lock").font(.system(size:12)).foregroundColor(.secondary)
                 }
                 options
-                if let file = model.files.first(where: { $0.id == model.selected }) {
+                if model.isProcessing {
+                    ProgressView("Cleaning configurations…").frame(maxWidth:.infinity,maxHeight:.infinity)
+                } else if let file = model.files.first(where: { $0.id == model.selected }) {
                     if let error = file.error {
                         empty(title:"Unable to read " + file.url.lastPathComponent,detail:error,icon:"doc.badge.ellipsis")
                     } else { ReviewView(file:file) }
@@ -552,11 +599,6 @@ struct ContentView: View {
                 footer
             }.padding(24).frame(maxWidth:.infinity,maxHeight:.infinity)
         }.frame(minWidth:1040,minHeight:700)
-        .onChange(of:model.host) { model.refresh() }
-        .onChange(of:model.ip) { model.refresh() }
-        .onChange(of:model.schemeMode) { model.refresh() }
-        .onChange(of:model.secret) { model.refresh() }
-        .onChange(of:model.identityOptions) { model.refresh() }
     }
     var sidebar: some View {
         VStack(alignment:.leading,spacing:16) {
@@ -663,7 +705,7 @@ struct ContentView: View {
                     Text("\(model.totals[0]) hostname · \(model.totals[1]) IP · \(model.totals[2]) credential · \(model.totals[3]) metadata changes").font(.system(size:12,design:.monospaced)).foregroundColor(.secondary)
                 }
                 Spacer(minLength:0)
-                Button("Save clean files…") { model.save() }.buttonStyle(.borderedProminent).controlSize(.large).disabled(model.ready.isEmpty).keyboardShortcut("s",modifiers:.command)
+                Button("Save clean files…") { model.save() }.buttonStyle(.borderedProminent).controlSize(.large).disabled(model.ready.isEmpty || model.isProcessing).keyboardShortcut("s",modifiers:.command)
             }
             Text(model.status).font(.system(size:12)).foregroundColor(.secondary).textSelection(.enabled)
             Text("Review before sharing. Unusual secrets and identifying descriptions may remain. Cleaned output is for analysis, not deployment.").font(.system(size:11)).foregroundColor(.secondary).fixedSize(horizontal:false,vertical:true)
@@ -672,7 +714,7 @@ struct ContentView: View {
 }
 final class App: NSObject, NSApplicationDelegate {
     var window: NSWindow!
-    let model = Model(defaults: .standard)
+    let model = Model(defaults: .standard, backgroundCleaning:true)
     func applicationDidFinishLaunching(_ notification: Notification) {
         window = NSWindow(contentRect:NSRect(x:0,y:0,width:1200,height:800),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
         window.title = "Cisco Config Cleaner — " + appVersionLabel; window.minSize = NSSize(width:1040,height:740)

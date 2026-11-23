@@ -7,6 +7,18 @@ func expectSecret(_ source: String, _ expected: String) {
 }
 
 func runCoverageTests() {
+    let background = Model(backgroundCleaning:true)
+    background.files = [ConfigFile(url:URL(fileURLWithPath:"/tmp/background.cfg"),original:"hostname edge\npassword 0 DEMO",outputName:"")]
+    background.files[0].cleaned = "password 0 DEMO"
+    background.refresh()
+    assert(background.isProcessing && background.files[0].cleaned.isEmpty)
+    background.host = false
+    let deadline = Date().addingTimeInterval(10)
+    while background.isProcessing && Date() < deadline { _ = RunLoop.current.run(mode:.default,before:Date().addingTimeInterval(0.01)) }
+    assert(!background.isProcessing && background.files[0].cleaned == "hostname edge\npassword 0 [REDACTED]")
+    background.resetOptions()
+    background.files = []; background.refresh()
+    assert(!background.isProcessing && background.files.isEmpty)
     let readURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at:readURL) }
     try! Data("test".utf8).write(to:readURL)
