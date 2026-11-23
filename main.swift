@@ -3,8 +3,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 // Compiled into the executable so an already-running older process cannot report a newly installed version.
-let appVersion = "27.0.1"
-let appBuild = "8"
+let appVersion = "27.0.2"
+let appBuild = "9"
 let appVersionLabel = "v\(appVersion) (build \(appBuild))"
 
 func replace(_ text: String, _ pattern: String, _ transform: (String) -> String) -> String {
@@ -184,7 +184,7 @@ final class Cleaner {
         }
     }
     let hostnameValuePattern = #"(?im)^(\h*(?:hostname|switchname|logging\h+host|ntp\h+(?:server|peer)|snmp-server\h+host|neighbor)\h+(?:vrf\h+\S+\h+)?)(\S+)"#
-    func clean(_ input: String, hostname: Bool, addresses: Bool, secrets: Bool, scheme: AddressScheme? = nil, marked: Bool = false, identity: Bool = false, identityOptions: IdentityOptions? = nil) -> String {
+    func clean(_ input: String, hostname: Bool, addresses: Bool, secrets: Bool, scheme: AddressScheme? = nil, marked: Bool = false, identity: Bool = false, identityOptions: IdentityOptions? = nil, addressSelection: AddressSelection = AddressSelection()) -> String {
         counts = [0, 0, 0, 0]
         category = 0
         let metadataOptions = identityOptions ?? (identity ? IdentityOptions() : .none)
@@ -224,14 +224,14 @@ final class Cleaner {
             }
         }
         category = 1
-        if addresses, let scheme = scheme {
+        if addresses, addressSelection.all, let scheme = scheme {
             let result = scheme.transform(text) { self.alias($0, host:false) }
             text = result.0
             counts[1] = result.1
         } else if addresses {
             text = text.components(separatedBy:"\n").map { line in
                 var result = line
-                for token in AddressScheme.tokens(line).reversed() where !token.marked {
+                for token in AddressScheme.tokens(line).reversed() where !token.marked && addressSelection.includes(token.bytes) && !token.mask && !AddressScheme.special(token.bytes) {
                     if let range = Range(token.range,in:result) {
                         result.replaceSubrange(range,with:(marked ? "*" : "") + alias(AddressScheme.string(token.bytes),host:false))
                         counts[1] += 1
@@ -257,6 +257,7 @@ struct ConfigFile: Identifiable {
     var error: String?
     var counts = [0, 0, 0, 0]
     var outputName: String
+    var flaggedLines: [Int] = []
     var total: Int { counts.reduce(0,+) }
 }
 final class Model: ObservableObject {
@@ -266,6 +267,7 @@ final class Model: ObservableObject {
     @Published var isProcessing = false
     @Published var host = true { didSet { optionsChanged() } }
     @Published var ip = true { didSet { optionsChanged() } }
+    @Published var addressSelection = AddressSelection() { didSet { optionsChanged() } }
     @Published var schemeMode = true { didSet { optionsChanged() } }
     @Published var mappingNote = ""
     @Published var secret = true { didSet { optionsChanged() } }
@@ -277,6 +279,7 @@ final class Model: ObservableObject {
     func aiSafePreset() {
         restoringOptions = true
         host = true; ip = true; secret = true; schemeMode = false
+        addressSelection = AddressSelection()
         identityOptions = IdentityOptions()
         anonymousNames = true; redactUsernames = true; redactMACs = true; redactCircuitIDs = true
         restoringOptions = false
@@ -284,7 +287,7 @@ final class Model: ObservableObject {
         refresh()
     }
     var weakenedProtection: Bool {
-        !secret || !host || !ip || identityOptions != IdentityOptions()
+        !secret || !host || !ip || !addressSelection.all || identityOptions != IdentityOptions()
     }
     @Published var identityOptions = IdentityOptions() { didSet { optionsChanged() } }
     @Published var status = "Files stay on this Mac"
@@ -316,6 +319,11 @@ final class Model: ObservableObject {
         ip = option("addresses")
         schemeMode = option("logicalScheme")
         secret = option("secrets")
+        addressSelection = AddressSelection(privateIPv4:option("privateIPv4"),otherIPv4:option("otherIPv4"),ipv6:option("ipv6"))
+        anonymousNames = defaults?.object(forKey:"cleaning.anonymousNames") as? Bool ?? false
+        redactUsernames = defaults?.object(forKey:"cleaning.redactUsernames") as? Bool ?? false
+        redactMACs = defaults?.object(forKey:"cleaning.redactMACs") as? Bool ?? false
+        redactCircuitIDs = defaults?.object(forKey:"cleaning.redactCircuitIDs") as? Bool ?? false
         identityOptions = IdentityOptions(banners:option("banners"),location:option("location"),domains:option("domains"),descriptions:option("descriptions"),serials:option("serials"))
         restoringOptions = false
     }
@@ -323,6 +331,7 @@ final class Model: ObservableObject {
         restoringOptions = true
         host = true
         ip = true
+        addressSelection = AddressSelection()
         schemeMode = true
         secret = true
         identityOptions = IdentityOptions()
@@ -336,7 +345,9 @@ final class Model: ObservableObject {
         guard !restoringOptions, let defaults = defaults else { return }
         let values = ["hostnames":host,"addresses":ip,"logicalScheme":schemeMode,"secrets":secret,
                       "banners":identityOptions.banners,"location":identityOptions.location,"domains":identityOptions.domains,
-                      "descriptions":identityOptions.descriptions,"serials":identityOptions.serials]
+                      "descriptions":identityOptions.descriptions,"serials":identityOptions.serials,
+                      "privateIPv4":addressSelection.privateIPv4,"otherIPv4":addressSelection.otherIPv4,"ipv6":addressSelection.ipv6,
+                      "anonymousNames":anonymousNames,"redactUsernames":redactUsernames,"redactMACs":redactMACs,"redactCircuitIDs":redactCircuitIDs]
         for (key,value) in values { defaults.set(value,forKey:"cleaning." + key) }
     }
     enum FolderPurpose: String { case input, output }
@@ -387,24 +398,23 @@ final class Model: ObservableObject {
         importNotice = queueFull ? " • Queue limit reached; remaining files were not added" : ""
         refresh()
     }
-    private static func cleanFiles(_ input: [ConfigFile], host: Bool, ip: Bool, schemeMode: Bool, secret: Bool, identityOptions: IdentityOptions, anonymousNames: Bool, redactUsernames: Bool, redactMACs: Bool, redactCircuitIDs: Bool) -> ([ConfigFile],String) {
+    private static func cleanFiles(_ input: [ConfigFile], host: Bool, ip: Bool, schemeMode: Bool, secret: Bool, identityOptions: IdentityOptions, addressSelection: AddressSelection, anonymousNames: Bool, redactUsernames: Bool, redactMACs: Bool, redactCircuitIDs: Bool) -> ([ConfigFile],String) {
         var files = input
         let ready = files.filter { $0.error == nil }
         let cleaner = Cleaner()
-        let scheme = ip && schemeMode ? AddressScheme(ready.map { $0.original }) : nil
-        let mappingNote = scheme?.warning ?? ""
+        let scheme = ip && schemeMode && addressSelection.all ? AddressScheme(ready.map { $0.original }) : nil
+        let mappingNote = ip && schemeMode && !addressSelection.all ? "Selective IP redaction uses labels to avoid collisions with retained addresses." : (scheme?.warning ?? "")
         if host { for file in ready { cleaner.discoverHosts(file.original) } }
         var names = Set<String>()
         var deviceNumber = 0
         for index in files.indices {
             guard files[index].error == nil else { continue }
-            files[index].cleaned = cleaner.clean(files[index].original,hostname:host,addresses:ip,secrets:secret,scheme:scheme,marked:true,identityOptions:identityOptions)
+            files[index].cleaned = cleaner.clean(files[index].original,hostname:host,addresses:ip,secrets:secret,scheme:scheme,marked:true,identityOptions:identityOptions,addressSelection:addressSelection)
             files[index].counts = cleaner.counts
-            let extra = Self.extraIdentityRedaction(files[index].cleaned, usernames:redactUsernames, macs:redactMACs, circuits:redactCircuitIDs)
-            if extra != files[index].cleaned {
-                files[index].cleaned = extra
-                // Extra rules are shown in the diff, not counted as Cisco-specific replacements.
-            }
+            let extra = Self.extraIdentityResult(files[index].cleaned, usernames:redactUsernames, macs:redactMACs, circuits:redactCircuitIDs)
+            files[index].cleaned = extra.0
+            files[index].counts[3] += extra.1
+            files[index].flaggedLines = Self.secretLineNumbers(extra.0)
             deviceNumber += 1
             let url = files[index].url
             var name = anonymousNames ? "device-\(deviceNumber)-clean.cfg" : cleanName(url); var suffix = 2
@@ -420,6 +430,7 @@ final class Model: ObservableObject {
         cleaningQueue.cancelAllOperations()
         let revision = generation, snapshot = files
         let host = self.host, ip = self.ip, schemeMode = self.schemeMode, secret = self.secret, identityOptions = self.identityOptions
+        let addressSelection = self.addressSelection
         let anonymousNames = self.anonymousNames, redactUsernames = self.redactUsernames, redactMACs = self.redactMACs, redactCircuitIDs = self.redactCircuitIDs
         let apply: ([ConfigFile],String) -> Void = { [weak self] files, note in
             guard let self = self, self.generation == revision else { return }
@@ -427,15 +438,15 @@ final class Model: ObservableObject {
             self.status = (files.isEmpty ? "Files stay on this Mac" : "\(self.ready.count) ready • \(files.count - self.ready.count) unreadable") + self.importNotice
         }
         guard backgroundCleaning && !files.isEmpty else {
-            let result = Self.cleanFiles(snapshot,host:host,ip:ip,schemeMode:schemeMode,secret:secret,identityOptions:identityOptions,anonymousNames:anonymousNames,redactUsernames:redactUsernames,redactMACs:redactMACs,redactCircuitIDs:redactCircuitIDs)
+            let result = Self.cleanFiles(snapshot,host:host,ip:ip,schemeMode:schemeMode,secret:secret,identityOptions:identityOptions,addressSelection:addressSelection,anonymousNames:anonymousNames,redactUsernames:redactUsernames,redactMACs:redactMACs,redactCircuitIDs:redactCircuitIDs)
             apply(result.0,result.1); return
         }
         isProcessing = true; status = "Cleaning configurations…"
-        for index in files.indices { files[index].cleaned = ""; files[index].counts = [0,0,0,0] }
+        for index in files.indices { files[index].cleaned = ""; files[index].counts = [0,0,0,0]; files[index].flaggedLines = [] }
         let operation = BlockOperation()
         operation.addExecutionBlock { [weak operation] in
             guard let operation = operation, !operation.isCancelled else { return }
-            let result = Self.cleanFiles(snapshot,host:host,ip:ip,schemeMode:schemeMode,secret:secret,identityOptions:identityOptions,anonymousNames:anonymousNames,redactUsernames:redactUsernames,redactMACs:redactMACs,redactCircuitIDs:redactCircuitIDs)
+            let result = Self.cleanFiles(snapshot,host:host,ip:ip,schemeMode:schemeMode,secret:secret,identityOptions:identityOptions,addressSelection:addressSelection,anonymousNames:anonymousNames,redactUsernames:redactUsernames,redactMACs:redactMACs,redactCircuitIDs:redactCircuitIDs)
             DispatchQueue.main.async {
                 guard !operation.isCancelled else { return }
                 apply(result.0,result.1)
@@ -465,37 +476,75 @@ final class Model: ObservableObject {
             "! [REDACTED] replaces a secret. Supply appropriate lab credentials before use.",
             "! Markers block affected address commands only; other commands may still execute if pasted.",
             "! Synthetic addresses may be publicly routable. Validate all addressing and dependencies in an isolated lab.",
-            "! IP mode: " + (ip ? (schemeMode ? "logical scheme; masks preserved" : "labels (not valid IP addresses)") : "original addresses retained"),
+            "! IP mode: " + (ip ? (schemeMode && addressSelection.all ? "logical scheme; masks preserved" : "labels (not valid IP addresses)") : "original addresses retained"),
+            "! IP selection: RFC1918 \(ip && addressSelection.privateIPv4 ? "replace" : "retain"); other IPv4 \(ip && addressSelection.otherIPv4 ? "replace" : "retain"); IPv6 \(ip && addressSelection.ipv6 ? "replace" : "retain").",
             "!"
         ].joined(separator:newline) + newline + file.cleaned
     }
-    // Additional identity rules operate on the reviewed output, before preview and export.
+    // These are explicit, bounded syntaxes, not a general diagnostic-output parser.
     static func extraIdentityRedaction(_ text: String, usernames: Bool = true, macs: Bool = true, circuits: Bool = true) -> String {
+        extraIdentityResult(text,usernames:usernames,macs:macs,circuits:circuits).0
+    }
+    static func extraIdentityResult(_ text: String, usernames: Bool, macs: Bool, circuits: Bool) -> (String,Int) {
         var patterns: [String] = []
-        if usernames { patterns.append(#"(?im)^(\h*username\h+)(\S+)"#) }
-        if circuits { patterns.append(#"(?im)^(\h*(?:circuit-id|circuit-identifier)\h+)([^\r\n]+)"#) }
+        let identity = #"(?:"[^"\r\n]*"|'[^'\r\n]*'|\S+)"#
+        if usernames {
+            patterns += [
+                #"(?im)^\h*username\h+("# + identity + ")",
+                #"(?im)^\h*snmp-server\h+user\h+("# + identity + ")",
+                #"(?im)^\h*ppp\h+(?:pap\h+sent-username|chap\h+hostname)\h+("# + identity + ")",
+                #"(?im)^\h*snmp-server\h+host\h+(?:vrf\h+\S+\h+)?\S+\h+(?:vrf\h+\S+\h+)?(?:(?:traps|informs)\h+)?version\h+3\h+(?:(?:auth|noauth|priv)\h+)?("# + identity + ")",
+                #"(?im)^\h*(?:user(?:name)?|authenticated user|user name)\h*[:=]\h*("# + identity + ")"
+            ]
+        }
+        if circuits { patterns.append(#"(?im)^\h*(?:circuit-id|circuit-identifier)\h+([^\r\n]+)"#) }
         var output = text
+        var count = 0
         for pattern in patterns {
             let regex = try! NSRegularExpression(pattern:pattern)
-            output = regex.stringByReplacingMatches(in:output,range:NSRange(output.startIndex...,in:output),withTemplate:"$1[REDACTED]")
+            for match in regex.matches(in:output,range:NSRange(output.startIndex...,in:output)).reversed() {
+                guard let range = Range(match.range(at:1),in:output), output[range] != "[REDACTED]" else { continue }
+                output.replaceSubrange(range,with:"[REDACTED]"); count += 1
+            }
         }
         if macs {
-            output = replace(output, #"(?i)(?<![0-9a-f])(?:[0-9a-f]{4}\.){2}[0-9a-f]{4}(?![0-9a-f])|(?<![0-9a-f:])(?:[0-9a-f]{2}(?::|-)){5}[0-9a-f]{2}(?![0-9a-f:])"#) { _ in "[MAC_REDACTED]" }
+            output = replace(output, #"(?i)(?<![0-9a-f])(?:[0-9a-f]{4}\.){2}[0-9a-f]{4}(?![0-9a-f])|(?<![0-9a-f:])(?:[0-9a-f]{2}(?::|-)){5}[0-9a-f]{2}(?![0-9a-f:])"#) { _ in count += 1; return "[MAC_REDACTED]" }
         }
-        return output
+        return (output,count)
     }
-    // Deliberately broad heuristic; never claim zero findings means safe.
-    static func possibleSecretLines(_ text: String) -> Int {
-        let regex = try! NSRegularExpression(pattern:#"(?im)^(?=[^\r\n]*\b(?:api[-_ ]?key|access[-_ ]?token|client[-_ ]?secret|password|secret|community|private[-_ ]?key|key-string|pre-shared-key)\b)(?![^\r\n]*\[REDACTED\])[^\r\n]+$"#)
-        return regex.numberOfMatches(in:text,range:NSRange(text.startIndex...,in:text))
+    // Check each keyword's following value independently; never suppress an entire line
+    // merely because an unrelated field was redacted. Only line numbers leave this helper.
+    static func secretLineNumbers(_ text: String) -> [Int] {
+        let regex = try! NSRegularExpression(pattern:#"(?i)\b(?:api[-_ ]?key|access[-_ ]?token|client[-_ ]?secret|password|secret|community|private[-_ ]?key|key-string|pre-shared-key|idtoken)\b(?:\h*[:=]\h*|\h+)(?:(?:0|3|5|6|7|8|9|ascii|hex|clear|encrypted|md5|sha256|scrypt)\h+)*(\[REDACTED\]|[^\h\r\n]+)"#)
+        let normalized = text.replacingOccurrences(of:"\r\n",with:"\n").replacingOccurrences(of:"\r",with:"\n")
+        return normalized.components(separatedBy:"\n").enumerated().compactMap { index,line in
+            let suspicious = regex.matches(in:line,range:NSRange(line.startIndex...,in:line)).contains { match in
+                guard let range = Range(match.range(at:1),in:line) else { return true }
+                return line[range] != "[REDACTED]"
+            }
+            return suspicious ? index + 1 : nil
+        }
     }
+    static func possibleSecretLines(_ text: String) -> Int { secretLineNumbers(text).count }
     func save() {
         guard !isProcessing else { return }
-        let possible = ready.reduce(0) { $0 + Self.possibleSecretLines($1.cleaned) }
+        let findings = ready.enumerated().map { (index,file) in (index + 1, Self.secretLineNumbers(file.cleaned)) }
+        let possible = findings.reduce(0) { $0 + $1.1.count }
         if weakenedProtection || !anonymousNames || !removeExtraIdentities || possible > 0 {
             let warning = NSAlert()
             warning.messageText = "Review privacy options before exporting"
             warning.informativeText = "\(possible) lines matched the broad residual-secret heuristic. It can flag harmless commands and miss unsupported secrets. Review the complete output and any disabled protections before sharing."
+            if possible > 0 {
+                let list = findings.filter { !$0.1.isEmpty }.map { number,lines in
+                    "File \(number): " + lines.map(String.init).joined(separator:", ")
+                }.joined(separator:"\n")
+                let scroll = NSScrollView(frame:NSRect(x:0,y:0,width:420,height:150))
+                let view = NSTextView(frame:scroll.bounds)
+                view.string = list; view.isEditable = false; view.isSelectable = true
+                view.isVerticallyResizable = true; view.autoresizingMask = [.width]
+                scroll.documentView = view; scroll.hasVerticalScroller = true
+                warning.accessoryView = scroll
+            }
             warning.addButton(withTitle:"Continue")
             warning.addButton(withTitle:"Cancel")
             guard warning.runModal() == .alertFirstButtonReturn else { return }
@@ -631,6 +680,13 @@ struct ReviewView: View {
                 pane("Cleaned",subtitle:"+ Replacement lines",lines:diff.cleaned,changes:diff.inserted,original:false)
             }.background(Color(nsColor:.textBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:8))
                 .overlay(RoundedRectangle(cornerRadius:8).stroke(Color(nsColor:.separatorColor),lineWidth:1))
+            if !file.flaggedLines.isEmpty {
+                ScrollView {
+                    Text("Possible secrets — cleaned line numbers: " + file.flaggedLines.map(String.init).joined(separator:", "))
+                        .font(.system(size:11)).foregroundColor(.orange).textSelection(.enabled)
+                        .frame(maxWidth:.infinity,alignment:.leading)
+                }.frame(maxHeight:64)
+            }
             if diff.truncated { Text("Preview limited to the first 2,000 lines / 200,000 characters. Export includes the complete file.").font(.system(size:12)).foregroundColor(.secondary) }
         }
     }
@@ -727,16 +783,21 @@ struct ContentView: View {
                 Spacer()
                 Button("Reset to Defaults") { model.resetOptions() }
                     .controlSize(.small)
-                    .help("Enable all cleaning options and use logical IP mapping. Remembered folders stay unchanged.")
+                    .help("Restore standard cleaning defaults and logical mapping. Use AI-safe preset for stricter identity removal. Remembered folders stay unchanged.")
             }
             HStack(alignment:.top,spacing:24) {
                 option("Hostnames",detail:"Consistent device aliases",value:$model.host)
                 VStack(alignment:.leading,spacing:4) {
                     Toggle("IP addresses",isOn:$model.ip).toggleStyle(.checkbox)
+                    Group {
+                        Toggle("RFC1918 IPv4",isOn:$model.addressSelection.privateIPv4)
+                        Toggle("Other IPv4 (including public)",isOn:$model.addressSelection.otherIPv4)
+                        Toggle("IPv6",isOn:$model.addressSelection.ipv6)
+                    }.toggleStyle(.checkbox).disabled(!model.ip)
                     Picker("Mode",selection:$model.schemeMode) {
                         Text("Logical scheme").tag(true)
                         Text("Labels").tag(false)
-                    }.labelsHidden().disabled(!model.ip)
+                    }.labelsHidden().disabled(!model.ip || !model.addressSelection.all)
                 }.frame(maxWidth:.infinity,alignment:.leading)
                 option("Passwords & secrets",detail:"Secret values, keys and certificates",value:$model.secret)
             }
@@ -749,10 +810,10 @@ struct ContentView: View {
                 Button("AI-safe preset") { model.aiSafePreset() }.controlSize(.small)
             }
             Toggle("Anonymize export filenames",isOn:$model.anonymousNames).toggleStyle(.checkbox)
-            Toggle("Usernames (explicit commands)",isOn:$model.redactUsernames).toggleStyle(.checkbox)
+            Toggle("Usernames (known command fields)",isOn:$model.redactUsernames).toggleStyle(.checkbox)
             Toggle("MAC addresses",isOn:$model.redactMACs).toggleStyle(.checkbox)
             Toggle("Circuit IDs (explicit commands)",isOn:$model.redactCircuitIDs).toggleStyle(.checkbox)
-            Text("Extra identity redaction is visible in the cleaned preview; extra substitutions are not included in the legacy replacement counters.").font(.system(size:11)).foregroundColor(.secondary)
+            Text("Extra identity redactions appear in the preview and metadata count. Flagged lines require manual review.").font(.system(size:11)).foregroundColor(.secondary)
             LazyVGrid(columns:[GridItem(.flexible(),alignment:.leading),GridItem(.flexible(),alignment:.leading),GridItem(.flexible(),alignment:.leading)],alignment:.leading,spacing:8) {
                 Toggle("Remove banners",isOn:$model.identityOptions.banners)
                 Toggle("Location & contact",isOn:$model.identityOptions.location)
@@ -892,7 +953,7 @@ if CommandLine.arguments.contains("--version") {
         assert(cleaner.clean(source,hostname:false,addresses:false,secrets:true) == expected)
         assert(cleaner.clean(expected,hostname:false,addresses:false,secrets:true) == expected)
     }
-    assert(appVersionLabel == "v27.0.1 (build 8)")
+    assert(appVersionLabel == "v27.0.2 (build 9)")
     let suite = "local.cisco.configcleaner.tests." + UUID().uuidString
     let store = UserDefaults(suiteName:suite)!
     let firstLaunch = Model(defaults:store)
