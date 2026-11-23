@@ -176,8 +176,8 @@ final class Cleaner {
                 text.replaceSubrange(range,with:token)
             }
             // Keep multiline block headers/terminators while removing their payloads.
-            text = redactValues(text, #"(?ms)^\h*-----BEGIN [^\r\n]*PRIVATE KEY-----\r?\n(?<value>.*?)\r?\n\h*-----END [^\r\n]*PRIVATE KEY-----"#)
-            text = redactValues(text, #"(?ims)^\h*certificate(?: ca| self-signed)?(?: [^\r\n]+)?\r?\n(?<value>.*?)\r?\n\h*quit\h*$"#)
+            text = redactValues(text, #"(?ms)^\h*-----BEGIN [^\r\n]*PRIVATE KEY-----\r?\n(?<value>.*?)(?=\r?\n\h*-----END [^\r\n]*PRIVATE KEY-----|\z)"#)
+            text = redactValues(text, #"(?ims)^\h*certificate(?: ca| self-signed)?(?: [^\r\n]+)?\r?\n(?<value>.*?)(?=\r?\n\h*quit\h*\r?$|\z)"#)
             var chainIndent: Int?
             text = text.components(separatedBy: "\n").map { line in
                 let command = line.trimmingCharacters(in: .whitespacesAndNewlines)
