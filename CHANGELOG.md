@@ -1,5 +1,12 @@
 # Changelog
 
+## 27.0.3 (build 10)
+
+- Rename the application to Config Cleaner; retain the existing bundle identifier.
+- Add the Limited Use License and third-party notices, including Unslop attribution.
+- Include the licensing documents in signed application bundles and verify them in CI and release ZIPs.
+- Add application menu access to licensing documents. No sanitizer behavior changes.
+
 ## 27.0.2 (build 9)
 
 - Persist additional privacy options and independent address selections.

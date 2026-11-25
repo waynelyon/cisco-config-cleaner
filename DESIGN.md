@@ -1,6 +1,6 @@
 # Native UI refinement
 
-Design review guided by [Unslop](https://github.com/heydamir/unslop), created by Damir Sokolovsky, licensed CC BY 4.0. This applies its design process to a native SwiftUI/AppKit application; no web UI or external runtime was introduced.
+Design review guided by [Unslop](https://github.com/heydamir/unslop), created by Damir Sokolovsky, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). This adapts its design process to a native SwiftUI/AppKit application; no web UI or external runtime was introduced. The adaptations are described below. See [Third-Party Notices](THIRD-PARTY-NOTICES.md) for attribution and applicable terms.
 
 ## Audit and direction
 

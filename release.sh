@@ -5,7 +5,7 @@ version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Resource
 minimum_os=$(/usr/libexec/PlistBuddy -c 'Print LSMinimumSystemVersion' Resources/Info.plist)
 work=$(mktemp -d "${TMPDIR:-/tmp}/cisco-release.XXXXXX")
 trap 'rm -rf "$work"' EXIT
-app="$work/Cisco Config Cleaner.app"
+app="$work/Config Cleaner.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" releases
 for arch in arm64 x86_64; do
     swiftc -target "$arch-apple-macos$minimum_os" -module-cache-path "$work/cache-$arch" AddressScheme.swift IdentityOptions.swift CoverageTests.swift SchemeTests.swift main.swift -o "$work/$arch"
@@ -14,9 +14,12 @@ version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Resource
 build=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' Resources/Info.plist)
 [[ "$("$work/$(uname -m)" --version)" == "v$version (build $build)" ]] || { print -u2 'Executable and bundle versions disagree'; exit 1; }
 "$work/$(uname -m)" --self-test
-lipo -create "$work/arm64" "$work/x86_64" -output "$app/Contents/MacOS/CiscoConfigCleaner"
+lipo -create "$work/arm64" "$work/x86_64" -output "$app/Contents/MacOS/ConfigCleaner"
 cp Resources/Info.plist "$app/Contents/Info.plist"
 cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
+# Include the license and notices in the signed application bundle.
+cp LICENSE "$app/Contents/Resources/LICENSE.txt"
+cp THIRD-PARTY-NOTICES.md "$app/Contents/Resources/THIRD-PARTY-NOTICES.txt"
 signing_identity="${SIGNING_IDENTITY:-}"
 notary_profile="${NOTARY_PROFILE:-}"
 if [[ -n "$notary_profile" && -z "$signing_identity" ]]; then
@@ -28,7 +31,7 @@ else
     codesign --force --sign - "$app"
 fi
 codesign --verify --deep --strict "$app"
-archive="releases/Cisco-Config-Cleaner-$version-macOS-universal.zip"
+archive="releases/Config-Cleaner-$version-macOS-universal.zip"
 if [[ -n "$notary_profile" ]]; then
     submission="$work/notarization.zip"
     ditto -c -k --sequesterRsrc --keepParent "$app" "$submission"

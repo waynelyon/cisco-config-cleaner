@@ -1,0 +1,33 @@
+Limited Use License
+
+Copyright © 2026 Wayne Lyon. All rights reserved.
+
+1. Scope and permitted use
+
+This license applies to the original project material for which the copyright holder has licensing rights (the Software). It does not relicense third-party material.
+
+Permission is granted, without charge, to individuals and organizations to download, install, execute, compile, and modify the Software for personal use and internal business operations, including providing professional services to customers.
+
+Organizations may make and distribute copies internally for these permitted purposes, including internally modified copies. Providing services using the Software does not grant permission to distribute the Software itself to customers.
+
+2. Redistribution
+
+External redistribution, resale, sublicensing, commercial packaging for external distribution, and external distribution of modified versions require prior written permission from the copyright holder, except where otherwise permitted by applicable law or existing license rights.
+
+This license does not limit viewing or forking rights available under the applicable GitHub Terms of Service. Those rights do not constitute a general permission for redistribution outside the scope of those terms.
+
+All rights not expressly granted are reserved. Copyright and attribution notices must be retained in copies of the Software and modified versions.
+
+3. Third-party material and user data
+
+Third-party materials remain subject to their respective license terms. See THIRD-PARTY-NOTICES.md. Nothing in this license restricts rights independently granted by a third-party license. No trademark rights are granted.
+
+This license does not claim ownership of user-provided configurations or cleaned output, and it does not impose its terms on that content. Users remain responsible for any third-party rights and confidentiality obligations applicable to their data.
+
+4. Disclaimer and limitation of liability
+
+THE SOFTWARE IS PROVIDED WITHOUT WARRANTIES, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE COPYRIGHT HOLDER SHALL NOT BE LIABLE FOR DAMAGES, LOSSES, DISCLOSURE OF CONFIDENTIAL INFORMATION, OR OTHER CLAIMS ARISING FROM THE USE OF OR INABILITY TO USE THE SOFTWARE.
+
+No support, maintenance, or future updates are guaranteed.

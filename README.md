@@ -1,6 +1,10 @@
-# Cisco Config Cleaner
+# Config Cleaner
 
 Native macOS utility for reviewing and anonymizing batches of Cisco configuration files. Processing stays on your Mac.
+
+Free for personal and internal business use under the [Limited Use License](LICENSE). External redistribution requires permission, subject to the terms of that license.
+
+Previously named Cisco Config Cleaner.
 
 ## Screenshots
 
@@ -14,7 +18,9 @@ See [the ranked repository audit and fixes](AUDIT.md) for the November 23, 2026 
 
 ## Download and install
 
-Download the app ZIP from the [latest GitHub release](https://github.com/waynelyon/cisco-config-cleaner/releases/latest), unzip it, and drag **Cisco Config Cleaner.app** into **Applications**.
+Download the app ZIP from the [latest GitHub release](https://github.com/waynelyon/cisco-config-cleaner/releases/latest), unzip it, and drag **Config Cleaner.app** into **Applications**.
+
+Starting with version 27.0.3, the application is named **Config Cleaner.app**. Older releases use the previous name. The bundle identifier is unchanged to preserve existing preferences. Quit the older application before installing the new one; the new filename does not automatically replace the old application.
 
 The release is universal (Apple Silicon and Intel) and targets macOS 14 or later. It is locally ad-hoc signed, not Apple Developer ID signed or notarized. macOS may block the downloaded app; after attempting to open it, use **System Settings → Privacy & Security → Open Anyway** if you trust this release. Do not disable Gatekeeper globally. A SHA-256 checksum is included with the release.
 
@@ -28,18 +34,24 @@ Requires macOS with Xcode or the Xcode command-line tools installed and a Swift 
 git clone https://github.com/waynelyon/cisco-config-cleaner.git
 cd cisco-config-cleaner
 zsh build.sh
-open "Cisco Config Cleaner.app"
+open "Config Cleaner.app"
 ```
 
 The build runs the regression checks, packages the icon and metadata, and signs the app locally. It does not notarize it for distribution. Copy the resulting app into Applications if desired. No third-party package installation is required.
 
-Open `Cisco Config Cleaner.app`. Drop text configuration files into the window or choose **Select Files…**. Select hostname, IP address, and credential removal independently, review the preview, then choose **Save Clean Files…** and an output folder.
+Open `Config Cleaner.app`. Drop text configuration files into the window or choose **Select Files…**. Select hostname, IP address, and credential removal independently, review the preview, then choose **Save Clean Files…** and an output folder.
 
 `router.cfg` becomes `router-clean.cfg`. Existing files are never overwritten; conflicts become `router-2-clean.cfg`. Originals are unchanged. Processing happens locally, without network calls, logging, or saved replacement maps.
 
 Hostnames declared with `hostname` or `switchname` receive consistent aliases across the batch. Known value positions in `logging host`, `ntp server/peer`, `snmp-server host`, and `neighbor` references are also replaced. Other references require manual review; command keywords are never globally substituted. IP cleaning defaults to a logical address scheme; labels remain available from the Mode picker. Turn IP cleaning off to retain original addressing. Logical mode preserves recognized subnet and wildcard masks and prefixes, while adding `*` before changed addresses. Credential values are replaced with `[REDACTED]`, preserving command prefixes, encryption type markers, and supported trailing options. Common password, secret, SNMP, TACACS/RADIUS key, pre-shared key, certificate, and PEM private key formats are covered.
 
 Review before sharing: this is a rules-based sanitizer, not a guarantee of complete anonymization. Unusual Cisco syntax, usernames, domain names, descriptions, serial numbers, MAC addresses, or embedded scripts can retain sensitive content. Text files up to 20 MB each are supported, with at most 500 queued files and 100 MB of decoded input per batch. The app is locally compiled, not notarized for distribution.
+
+### Important usage limitations
+
+Review the complete exported files before sharing them with third parties or AI services. Preview content, replacement counts, and residual-secret warnings do not certify that an export is safe. Anonymized configurations are for review and analysis, not for deployment to production network devices.
+
+The application is provided without warranty. Users are responsible for compliance with their organization's security, confidentiality, and data-handling policies.
 
 Source: `main.swift` and `AddressScheme.swift`. Build with `zsh build.sh`. Run the bundled executable with `--self-test` for basic sanitizer checks.
 
@@ -49,7 +61,7 @@ The SwiftUI/AppKit interface includes a file sidebar with individual removal, a 
 
 Use Command-O to select files and Command-S to save. Preview text is selectable and supports copying. Preview is limited to the first 2,000 lines / 200,000 characters per side; exports contain the full cleaned text. Filename conflicts are resolved without overwriting. Duplicate names within a batch receive numbered names.
 
-UI design process: [Unslop](https://github.com/heydamir/unslop) by Damir Sokolovsky, CC BY 4.0. See DESIGN.md for the audit and applied design passes.
+UI design process: [Unslop](https://github.com/heydamir/unslop) by Damir Sokolovsky, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). See [DESIGN.md](DESIGN.md) for the native adaptations and [Third-Party Notices](THIRD-PARTY-NOTICES.md) for attribution.
 
 Verification: sanitizer regression checks, replacement counts, multiline diff alignment detection, unchanged-line detection, duplicate naming, option updates, and queue selection after removal. Native UI checked with the synthetic configurations in fixtures/.
 
@@ -108,6 +120,10 @@ Use the AI-safe preset to enable the existing redaction options, label-mode IP h
 
 Independent RFC1918 IPv4, other IPv4 (including public and non-RFC1918 special-use unicast), and IPv6 controls; protocol-special addresses and recognized masks remain unchanged. Selective replacement uses labels, even if logical mode is selected, to avoid collisions with retained addresses. All privacy choices persist. Known SNMPv3, PPP and explicit diagnostic username fields are now covered. Extra substitutions count as metadata changes. Residual-secret detection examines individual fields and lists cleaned line numbers per file before export; counts are heuristic and not a safety guarantee. Review complete files before sharing. The screenshots show an earlier UI. The latest downloadable release may lag source; verify the release version before using it.
 
+## Version 27.0.3 (build 10)
+
+Renamed the application to Config Cleaner. Added the Limited Use License, third-party notices, application menu access to the licensing documents, and CI verification of the documents in the signed app and release ZIP. The bundle identifier and sanitizer behavior remain unchanged.
+
 ## Optional signed and notarized distribution
 
 The default CI and local release builds are ad-hoc signed. A maintainer with an installed Apple Developer ID Application certificate and an existing notarytool Keychain profile can run:
@@ -116,8 +132,18 @@ The default CI and local release builds are ad-hoc signed. A maintainer with an 
 SIGNING_IDENTITY="Developer ID Application: YOUR NAME (TEAMID)" NOTARY_PROFILE="cisco-cleaner-notary" zsh release.sh
 ```
 
-The script uses hardened runtime, submits a temporary archive, staples and validates the ticket, checks Gatekeeper, and creates a fresh final archive and SHA-256 checksum. Do not commit credentials or export private keys to this repository. CI retains the tested ad-hoc universal archive and checksum as an Actions artifact for 14 days; this is not a published GitHub release. Review the archive and release notes before publishing.
+The script uses hardened runtime, submits a temporary archive, staples and validates the ticket, checks Gatekeeper, and creates a fresh final archive and SHA-256 checksum. Do not commit credentials or export private keys to this repository. CI retains the tested ad-hoc universal archive and checksum as an Actions artifact for 14 days. Artifact upload alone is not a published GitHub release. The explicitly authorized 27.0.3 release is gated on successful build, regression, signing, checksum and license checks.
 
 ## Licensing
 
-No explicit project license has been selected by the copyright holder. Public access to source is not a grant of redistribution rights. The maintainer must choose the intended terms before describing this project as open source or granting redistribution permissions.
+Copyright © 2026 Wayne Lyon. All rights reserved.
+
+Original project material is licensed under the [Limited Use License](LICENSE). Personal and internal business use, including professional services to customers, is free. Internal copying and modification are permitted under the license.
+
+External redistribution, resale, and commercial packaging require prior written permission, except where otherwise permitted by applicable law or existing rights. The license preserves GitHub's applicable viewing and forking permissions. This project is source-available, not open source.
+
+The project license does not claim ownership of user-provided configurations or cleaned output and does not impose its terms on that content. Third-party material remains subject to its respective terms. See [Third-Party Notices](THIRD-PARTY-NOTICES.md).
+
+Builds that include the licensing documents provide **License…** and **Third-Party Notices…** in the application menu. The documents are also in the application bundle's `Contents/Resources` directory. Earlier releases may not contain these documents.
+
+This is an independent utility and is not affiliated with, sponsored by, or endorsed by Cisco Systems, Inc. Cisco and IOS XE are trademarks of their respective owners.

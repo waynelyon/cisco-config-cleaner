@@ -3,8 +3,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 // Compiled into the executable so an already-running older process cannot report a newly installed version.
-let appVersion = "27.0.2"
-let appBuild = "9"
+let appVersion = "27.0.3"
+let appBuild = "10"
 let appVersionLabel = "v\(appVersion) (build \(appBuild))"
 
 func replace(_ text: String, _ pattern: String, _ transform: (String) -> String) -> String {
@@ -858,15 +858,30 @@ final class App: NSObject, NSApplicationDelegate {
     let model = Model(defaults: .standard, backgroundCleaning:true)
     func applicationDidFinishLaunching(_ notification: Notification) {
         window = NSWindow(contentRect:NSRect(x:0,y:0,width:1200,height:800),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
-        window.title = "Cisco Config Cleaner — " + appVersionLabel; window.minSize = NSSize(width:1040,height:740)
+        window.title = "Config Cleaner — " + appVersionLabel; window.minSize = NSSize(width:1040,height:740)
         window.contentView = NSHostingView(rootView:ContentView(model:model))
         let menu = NSMenu(); let appItem = NSMenuItem(); menu.addItem(appItem)
-        let appMenu = NSMenu(); appMenu.addItem(withTitle:"Quit Cisco Config Cleaner",action:#selector(NSApplication.terminate(_:)),keyEquivalent:"q"); appItem.submenu = appMenu
+        let appMenu = NSMenu(); appItem.submenu = appMenu
+        let licenseItem = appMenu.addItem(withTitle:"License…",action:#selector(showLicense(_:)),keyEquivalent:"")
+        licenseItem.target = self
+        let noticesItem = appMenu.addItem(withTitle:"Third-Party Notices…",action:#selector(showThirdPartyNotices(_:)),keyEquivalent:"")
+        noticesItem.target = self
+        appMenu.addItem(NSMenuItem.separator())
+        appMenu.addItem(withTitle:"Quit Config Cleaner",action:#selector(NSApplication.terminate(_:)),keyEquivalent:"q")
         let edit = NSMenuItem(); menu.addItem(edit); let editMenu = NSMenu(title:"Edit"); edit.submenu = editMenu
         editMenu.addItem(withTitle:"Copy",action:#selector(NSText.copy(_:)),keyEquivalent:"c")
         editMenu.addItem(withTitle:"Select All",action:#selector(NSText.selectAll(_:)),keyEquivalent:"a")
         NSApp.mainMenu = menu
         window.center(); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps:true)
+    }
+    @objc private func showLicense(_ sender: Any?) { openLicensingDocument("LICENSE") }
+    @objc private func showThirdPartyNotices(_ sender: Any?) { openLicensingDocument("THIRD-PARTY-NOTICES") }
+    private func openLicensingDocument(_ name: String) {
+        if let url = Bundle.main.url(forResource:name,withExtension:"txt"), NSWorkspace.shared.open(url) { return }
+        let alert = NSAlert()
+        alert.messageText = "Cannot open licensing document"
+        alert.informativeText = "\(name).txt is missing or could not be opened. Check the application bundle or the project source repository."
+        alert.runModal()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
     func application(_ sender: NSApplication, openFiles filenames: [String]) { model.add(filenames.map { URL(fileURLWithPath:$0) }) }
@@ -954,7 +969,7 @@ if CommandLine.arguments.contains("--version") {
         assert(cleaner.clean(source,hostname:false,addresses:false,secrets:true) == expected)
         assert(cleaner.clean(expected,hostname:false,addresses:false,secrets:true) == expected)
     }
-    assert(appVersionLabel == "v27.0.2 (build 9)")
+    assert(appVersionLabel == "v27.0.3 (build 10)")
     let suite = "local.cisco.configcleaner.tests." + UUID().uuidString
     let store = UserDefaults(suiteName:suite)!
     let firstLaunch = Model(defaults:store)

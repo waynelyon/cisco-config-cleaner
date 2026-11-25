@@ -17,12 +17,55 @@ jobs:
         run: zsh release.sh
       - name: Verify release checksum
         run: cd releases && shasum -a 256 -c SHA256SUMS.txt
+      - name: Verify licensing documents in app and release ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Resources/Info.plist)
+          archive="releases/Config-Cleaner-$version-macOS-universal.zip"
+          resources='Config Cleaner.app/Contents/Resources'
+          cmp LICENSE "$resources/LICENSE.txt"
+          cmp THIRD-PARTY-NOTICES.md "$resources/THIRD-PARTY-NOTICES.txt"
+          unzip -p "$archive" "$resources/LICENSE.txt" | cmp - LICENSE
+          unzip -p "$archive" "$resources/THIRD-PARTY-NOTICES.txt" | cmp - THIRD-PARTY-NOTICES.md
       - name: Upload tested universal archive and checksum
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: cisco-config-cleaner-universal
+          name: config-cleaner-universal
           path: |
             releases/*.zip
             releases/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
+
+  publish-27-0-3:
+    # One-time authorized release; ordinary pushes and PRs never publish.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.head_commit.message == 'Release Config Cleaner 27.0.3'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Publish verified 27.0.3 artifacts without replacing existing releases
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$GITHUB_RUN_ID" --name config-cleaner-universal --dir "$RUNNER_TEMP/config-cleaner-release"
+          cd "$RUNNER_TEMP/config-cleaner-release"
+          archive=Config-Cleaner-27.0.3-macOS-universal.zip
+          test -f "$archive"
+          test -f SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          if gh release view v27.0.3 >/dev/null 2>&1; then
+            echo 'Release v27.0.3 already exists; refusing to replace it.' >&2
+            exit 1
+          fi
+          gh release create v27.0.3 "$archive" SHA256SUMS.txt \
+            --target "$GITHUB_SHA" \
+            --title "Config Cleaner 27.0.3" \
+            --notes "Renamed Config Cleaner; free personal and internal business use under the Limited Use License. Third-party notices and license are bundled. Native universal macOS 14+ build, ad-hoc signed and not notarized. Review all sanitized outputs before sharing; no production deployment. See README and CHANGELOG for details."

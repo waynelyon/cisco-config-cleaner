@@ -1,6 +1,7 @@
 .DS_Store
 *.app/
 CiscoConfigCleaner-next
+ConfigCleaner-next
 main-v1.swift
 .build/
 releases/
